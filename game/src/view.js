@@ -59,6 +59,8 @@ function conePath(cx, cy, face, half, reach, floor) {
 function cone(ctx, cx, cy, face, reach, half, inner, outer, dashed, floor, weight = 2) {
   const pts = conePath(cx, cy, face, half, reach, floor);
   ctx.save();
+  // the beams stay dangerous without out-shouting the one moving body
+  ctx.globalAlpha = 0.87;
   ctx.beginPath();
   ctx.moveTo(cx, cy);
   for (const [x, y] of pts) ctx.lineTo(x, y);
@@ -220,11 +222,19 @@ function burglar(ctx, run) {
   ctx.save();
   ctx.translate(b.x, b.y);
   if (hero > 1) {
-    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 84);
-    g.addColorStop(0, 'rgba(255,182,112,0.17)');
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 96);
+    g.addColorStop(0, 'rgba(255,182,112,0.22)');
     g.addColorStop(1, 'rgba(255,182,112,0)');
     ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(0, 0, 84, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, 96, 0, Math.PI * 2); ctx.fill();
+    // the pool on the floor: a tighter, warmer circle right under him, so at
+    // 768 wide the eye lands on the one moving body before the beams
+    const p = ctx.createRadialGradient(0, 12, 4, 0, 12, 58);
+    p.addColorStop(0, 'rgba(255,196,132,0.34)');
+    p.addColorStop(0.7, 'rgba(255,176,104,0.16)');
+    p.addColorStop(1, 'rgba(255,176,104,0)');
+    ctx.fillStyle = p;
+    ctx.beginPath(); ctx.ellipse(0, 14, 58, 30, 0, 0, Math.PI * 2); ctx.fill();
   }
   halo(ctx, 0, 0, 44, '92,232,192', 0.34);
   ctx.scale(hero, hero);
@@ -242,8 +252,8 @@ function burglar(ctx, run) {
   ctx.fillStyle = INK.burglar;
   ctx.fill();
   // the warm rim: a lit edge so the one moving body reads at 768 wide
-  ctx.strokeStyle = 'rgba(255,196,132,0.62)';
-  ctx.lineWidth = 2.2;
+  ctx.strokeStyle = 'rgba(255,196,132,0.80)';
+  ctx.lineWidth = 3.2;
   ctx.stroke();
   // the light comes from the upper left, so only that edge is white
   ctx.strokeStyle = 'rgba(240,255,250,0.85)';
@@ -259,9 +269,13 @@ function burglar(ctx, run) {
   ctx.strokeStyle = 'rgba(8,20,26,0.85)';
   ctx.lineWidth = 2.2;
   ctx.beginPath(); ctx.moveTo(-7, -6); ctx.lineTo(9, 5); ctx.stroke();
-  // the kit bag over the shoulder
-  ctx.fillStyle = '#17342c';
-  ctx.beginPath(); ctx.arc(8, 4, 5, 0, Math.PI * 2); ctx.fill();
+  // the kit bag over the shoulder: a big soft sack whose knot catches the light
+  ctx.fillStyle = '#1d4034';
+  ctx.beginPath(); ctx.arc(13, 1, 8.2, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,214,150,0.70)'; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.arc(13, 1, 8.2, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,224,150,0.95)';
+  ctx.beginPath(); ctx.arc(13, -7.6, 1.8, 0, Math.PI * 2); ctx.fill();
   // mask
   ctx.fillStyle = '#08111f';
   rrect(ctx, -6.4, -12.6, 12.8, 7.2, 3); ctx.fill();
@@ -427,7 +441,7 @@ function vaultDoor(ctx, floor) {
   ctx.save();
   ctx.translate(d.x, d.y);
   if (!open) {
-    halo(ctx, 0, 0, 78, '243,198,107', 0.20);
+    halo(ctx, 0, 0, 78, '243,198,107', 0.26);
     ctx.fillStyle = '#0c1320';
     ctx.beginPath(); ctx.arc(0, 0, 34, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = '#1b2740'; ctx.lineWidth = 6;
@@ -436,6 +450,9 @@ function vaultDoor(ctx, floor) {
     ctx.beginPath(); ctx.arc(0, 0, 27, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = INK.brass; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(0, 0, 27, 0, Math.PI * 2); ctx.stroke();
+    // a lit crescent on the dial: steel, not a flat disc
+    ctx.strokeStyle = 'rgba(255,224,170,0.55)'; ctx.lineWidth = 2.4;
+    ctx.beginPath(); ctx.arc(0, 0, 27, Math.PI * 1.05, Math.PI * 1.55); ctx.stroke();
     ctx.strokeStyle = 'rgba(232,242,255,0.34)'; ctx.lineWidth = 3;
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
@@ -456,9 +473,9 @@ function vaultDoor(ctx, floor) {
     ctx.strokeStyle = INK.brass; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(6, -3); ctx.stroke();
     ctx.fillStyle = INK.brass;
-    ctx.font = `bold 10px ${FACE}`;
+    ctx.font = `bold 11px ${FACE}`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('VAULT', 0, -40);
+    ctx.fillText('VAULT', 0, -41);
     ctx.globalCompositeOperation = 'lighter';
     halo(ctx, 44, 0, 96, '255,206,140', 0.14);
   } else {

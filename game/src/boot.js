@@ -58,7 +58,7 @@ function stage(kind) {
     // prints of the run that got him here
     const b = at(12, 12);
     run.burglar.x = b.x; run.burglar.y = b.y;
-    run.heroScale = 1.68;
+    run.heroScale = 2.08;
     run.trail = [
       { x: 150, y: 130 }, { x: 180, y: 195 }, { x: 215, y: 260 },
       { x: 255, y: 320 }, { x: 300, y: 375 }, { x: 350, y: 420 },
