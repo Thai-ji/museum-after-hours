@@ -1,0 +1,24 @@
+/* style.css — everything but the canvas is chrome; the game is the picture. */
+html, body {
+  margin: 0; padding: 0;
+  background: #060914;
+  color: #dfe6f5;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  height: 100%;
+  display: flex; align-items: center; justify-content: center;
+}
+#frame {
+  padding: 10px;
+  border-radius: 12px;
+  background: #0a0e1f;
+  box-shadow: 0 0 0 1px rgba(120,140,200,0.2), 0 18px 60px rgba(0,0,0,0.55);
+}
+#game {
+  display: block;
+  border-radius: 6px;
+  background: #141a2e;
+  image-rendering: auto;
+}
+/* bare screenshot mode (?shot=...): the canvas IS the page, pinned to 0,0 */
+body.bare { display: block; }
+body.bare #frame { padding: 0; border-radius: 0; box-shadow: none; }
