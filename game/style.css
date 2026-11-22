@@ -1,24 +1,38 @@
-/* style.css — everything but the canvas is chrome; the game is the picture. */
+/* style.css — the page is a black frame around one bright canvas; nothing else. */
 html, body {
-  margin: 0; padding: 0;
-  background: #060914;
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #05070d;
   color: #dfe6f5;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  height: 100%;
-  display: flex; align-items: center; justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-#frame {
-  padding: 10px;
+#hall {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
   border-radius: 12px;
-  background: #0a0e1f;
-  box-shadow: 0 0 0 1px rgba(120,140,200,0.2), 0 18px 60px rgba(0,0,0,0.55);
+  background: #0a0f1d;
+  box-shadow: 0 0 0 1px rgba(120,150,215,0.22), 0 24px 70px rgba(0,0,0,0.6);
 }
-#game {
+#board {
   display: block;
   border-radius: 6px;
-  background: #141a2e;
-  image-rendering: auto;
+  background: #0f1626;
 }
-/* bare screenshot mode (?shot=...): the canvas IS the page, pinned to 0,0 */
-body.bare { display: block; }
-body.bare #frame { padding: 0; border-radius: 0; box-shadow: none; }
+#hint {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.4px;
+  color: #77839f;
+}
+/* screenshot mode (?shot=...): the canvas is pinned to the top-left corner at
+   exactly 1280x720, so a capture of the viewport is a capture of the game. */
+body.still { display: block; }
+body.still #hall { padding: 0; border-radius: 0; box-shadow: none; }
+body.still #hint { display: none; }

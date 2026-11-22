@@ -1,0 +1,5 @@
+# local runs
+out*/
+.chrome-tmp*/
+.chrome-hand/
+*.log

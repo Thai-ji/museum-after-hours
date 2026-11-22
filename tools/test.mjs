@@ -1,162 +1,294 @@
-// tools/test.mjs — headless checks for the rules layer (never shipped: main.ts copies only game/).
-// Run: node tools/test.mjs
-import { MAP_ROWS, buildLevel, tileAt } from '../game/src/map.js';
-import { TILE, COLS, ROWS, HEIST } from '../game/src/constants.js';
-import { makeGame, startRun, step, EVENTS, coneSees, blocked, inDuct } from '../game/src/stealth.js';
+// tools/test.mjs — headless checks on the rules layer (never shipped; main.ts
+// copies only game/ and screenshots/). Run: node tools/test.mjs
+import { FLOORS } from './floors.mjs';
+import { CELL, GRID_W, GRID_H, RAID, BURGLAR, WARDEN, EYE, ALARM } from '../game/src/tuning.js';
+import {
+  freshRun, beginNight, advance, WHEN, catches, squeezed, openLine,
+} from '../game/src/rules.js';
+import { loadFloor, tileChar, isWallTile, isVentTile } from '../game/src/layout.js';
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
-  if (cond) { pass++; console.log(`PASS ${name}`); }
+  if (cond) { pass++; console.log(`ok   ${name}`); }
   else { fail++; console.log(`FAIL ${name} ${extra}`); }
 };
 
-// --- map shape -----------------------------------------------------------------
-ok('18 rows', MAP_ROWS.length === ROWS, `got ${MAP_ROWS.length}`);
-const badRows = MAP_ROWS.map((r, i) => [i, r.length]).filter(([, n]) => n !== COLS);
-ok('every row is 32 cols', badRows.length === 0, JSON.stringify(badRows));
+const centre = (tx, ty) => ({ x: tx * CELL + CELL / 2, y: ty * CELL + CELL / 2 });
+const tileOf = p => ({ tx: Math.floor(p.x / CELL), ty: Math.floor(p.y / CELL) });
 
-const level = buildLevel();
-ok('spawn exists', !!level.spawn);
-ok('exit exists', !!level.exit);
-ok('3 guards', level.guards.length === 3, `got ${level.guards.length}`);
-ok('3 cameras', level.cameras.length === 3, `got ${level.cameras.length}`);
-ok('4 loot', level.loot.length === 4, level.loot.map(l => l.kind).join(','));
+// --- the plans themselves -------------------------------------------------------
+ok('three floors', FLOORS.length === 3, `got ${FLOORS.length}`);
+FLOORS.forEach((plan, i) => {
+  ok(`floor ${i + 1} has ${GRID_H} rows`, plan.grid.length === GRID_H, `got ${plan.grid.length}`);
+  const bad = plan.grid.map((r, y) => [y, r.length]).filter(([, n]) => n !== GRID_W);
+  ok(`floor ${i + 1} rows are ${GRID_W} wide`, bad.length === 0, JSON.stringify(bad));
+  const flat = plan.grid.join('');
+  ok(`floor ${i + 1} has one entry`, (flat.match(/S/g) ?? []).length === 1);
+  ok(`floor ${i + 1} has one staircase`, (flat.match(/X/g) ?? []).length === 1);
+  ok(`floor ${i + 1} holds at least two pieces`, (flat.match(/[LGV]/g) ?? []).length >= 2);
+  ok(`floor ${i + 1} fields at least two wardens`, (flat.match(/[123]/g) ?? []).length >= 2);
+  ok(`floor ${i + 1} has a camera`, (flat.match(/[ab]/g) ?? []).length >= 1);
+});
+const vaultPlans = FLOORS.filter(p => p.grid.join('').includes('V'));
+ok('the vault is on the last floor', FLOORS[2].grid.join('').includes('V') && vaultPlans.length === 1);
 
-// patrol endpoints must be walkable floor (the classic "doorway sealed" bug)
-for (const g of level.guards) {
-  for (const [tx, ty] of [g.a, g.b]) {
-    ok(`guard ${g.id} waypoint ${tx},${ty} walkable`, tileAt(level, tx, ty) === '.');
-  }
-}
-
-// --- connectivity --------------------------------------------------------------
-function flood(from) {
-  const seen = new Set([`${Math.floor(from.x / TILE)},${Math.floor(from.y / TILE)}`]);
-  const q = [[Math.floor(from.x / TILE), Math.floor(from.y / TILE)]];
+// --- reachability, floor by floor ------------------------------------------------
+function flood(floor) {
+  const seen = new Set();
+  const q = [tileOf(floor.entry)];
+  seen.add(`${q[0].tx},${q[0].ty}`);
   while (q.length) {
-    const [tx, ty] = q.pop();
+    const { tx, ty } = q.pop();
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const nx = tx + dx, ny = ty + dy, k = `${nx},${ny}`;
-      if (seen.has(k)) continue;
-      const ch = tileAt(level, nx, ny);
-      if (ch === '#') continue;
-      seen.add(k); q.push([nx, ny]);
+      if (seen.has(k) || isWallTile(floor, nx, ny)) continue;
+      seen.add(k); q.push({ tx: nx, ty: ny });
     }
   }
   return seen;
 }
-const reach = flood(level.spawn);
-const tileKey = (p) => `${Math.floor(p.x / TILE)},${Math.floor(p.y / TILE)}`;
-ok('exit reachable from spawn', reach.has(tileKey(level.exit)));
-for (const l of level.loot) ok(`loot ${l.kind} reachable`, reach.has(tileKey(l)));
-for (const g of level.guards) for (const [tx, ty] of [g.a, g.b]) ok(`guard ${g.id} beat reachable`, reach.has(`${tx},${ty}`));
-// ducts must be on the reachable side too, otherwise the stealth route is a lie
-const ductTiles = [];
-MAP_ROWS.forEach((r, y) => [...r].forEach((ch, x) => { if (ch === 'd') ductTiles.push(`${x},${y}`); }));
-ok('at least 4 duct tiles', ductTiles.length >= 4, `got ${ductTiles.length}`);
-ok('all ducts connected', ductTiles.every(k => reach.has(k)), ductTiles.filter(k => !reach.has(k)).join(' '));
 
-// --- collision & sight ---------------------------------------------------------
-ok('spawn not blocked', !blocked(level, level.spawn.x, level.spawn.y, 11));
-ok('wall blocks', blocked(level, TILE * 0.5, TILE * 0.5, 11));
-ok('duct is not a wall', !blocked(level, ductTiles.length ? Number(ductTiles[0].split(',')[0]) * TILE + 20 : 60,
-  ductTiles.length ? Number(ductTiles[0].split(',')[1]) * TILE + 20 : 60, 6));
-ok('duct sensed as duct', ductTiles.length > 0 && inDuct(level, Number(ductTiles[0].split(',')[0]) * TILE + 20, Number(ductTiles[0].split(',')[1]) * TILE + 20));
-
-const g0 = level.guards[0];
-ok('cone sees straight ahead', coneSees(level, g0.x, g0.y, Math.PI / 2, 210, 0.58, g0.x, g0.y + 120));
-ok('cone blind behind', !coneSees(level, g0.x, g0.y, Math.PI / 2, 210, 0.58, g0.x, g0.y - 120));
-
-// --- getting caught ------------------------------------------------------------
-{
-  const game = makeGame(level);
-  startRun(game);
-  const guard = game.guards[0];
-  game.thief.x = guard.x; game.thief.y = guard.y + 100;
-  guard.face = Math.PI / 2; guard.reactTimer = 1e9; // stare at the thief
-  let caught = false;
-  for (let i = 0; i < 60 * 8 && !caught; i++) {
-    for (const e of step(game, 1 / 60, { dx: 0, dy: 0 })) if (e.k === EVENTS.CAUGHT) caught = true;
+for (let i = 0; i < 3; i++) {
+  const floor = loadFloor(i);
+  const seen = flood(floor);
+  const key = p => `${tileOf(p).tx},${tileOf(p).ty}`;
+  ok(`floor ${i + 1}: stairs reachable`, seen.has(key(floor.stairs)));
+  for (const item of floor.loot) ok(`floor ${i + 1}: ${item.kind} reachable`, seen.has(key(item)));
+  for (const w of floor.wardens) {
+    for (const [tx, ty] of w.beat) {
+      ok(`floor ${i + 1}: warden ${w.mark} beat ${tx},${ty} walkable`, tileChar(floor, tx, ty) !== '#');
+      ok(`floor ${i + 1}: warden ${w.mark} beat ${tx},${ty} reachable`, seen.has(`${tx},${ty}`));
+    }
   }
-  ok('standing in a cone ends the run', caught, `alarm=${game.alarm.toFixed(2)} state=${game.state}`);
+  const vents = [];
+  for (let ty = 0; ty < GRID_H; ty++) for (let tx = 0; tx < GRID_W; tx++) if (isVentTile(floor, tx, ty)) vents.push(`${tx},${ty}`);
+  ok(`floor ${i + 1}: has a duct`, vents.length >= 1, `got ${vents.length}`);
+  ok(`floor ${i + 1}: ducts connected`, vents.every(k => seen.has(k)), vents.filter(k => !seen.has(k)).join(' '));
+  ok(`floor ${i + 1}: entry is not inside a wall`, !squeezed(floor, floor.entry.x, floor.entry.y, BURGLAR.radius));
 }
 
-// --- loot + getaway ------------------------------------------------------------
+// --- collision and sight ---------------------------------------------------------
 {
-  const game = makeGame(level);
-  startRun(game);
-  const item = game.loot.find(l => l.kind === 'case');
-  game.thief.x = item.x; game.thief.y = item.y;
-  for (let i = 0; i < 10; i++) step(game, 1 / 60, { dx: 0, dy: 0 });
-  ok('case picked up', game.loot.find(l => l.kind === 'case').taken);
-  ok('haul counted', game.haul === 220, `haul=${game.haul}`);
-  ok('getaway clock started', game.clockRunning && game.clock > 80, `clock=${game.clock.toFixed(1)}`);
+  const floor = loadFloor(0);
+  ok('a wall cell is solid', squeezed(floor, CELL * 0.5, CELL * 0.5, BURGLAR.radius));
+  ok('open marble is not solid', !squeezed(floor, CELL * 3.5, CELL * 9.5, BURGLAR.radius));
+  const vent = loadFloor(0);
+  ok('a duct tile is walkable', !isWallTile(vent, 9, 6));
+  const ductEntry = centre(9, 6);
+  ok('a duct is a vent tile', isVentTile(vent, 9, 6));
+  ok('a duct breaks the line of sight',
+    !openLine(vent, centre(8, 6).x, centre(8, 6).y, centre(17, 6).x, centre(17, 6).y));
+  const open = centre(4, 9);
+  const w = centre(8, 9);
+  ok('a torch sees straight down its beam', catches(floor, open.x, open.y, 0, WARDEN.cone, WARDEN.half, w.x, w.y));
+  ok('a torch is blind behind itself', !catches(floor, w.x, w.y, 0, WARDEN.cone, WARDEN.half, open.x, open.y));
+  ok('a wall stops the lens',
+    !catches(floor, centre(2, 4).x, centre(2, 4).y, 0, 400, 0.6, centre(19, 4).x, centre(19, 4).y));
 }
 
-// --- vault needs standing time --------------------------------------------------
+// --- the alarm trips -------------------------------------------------------------
 {
-  const game = makeGame(level);
-  startRun(game);
-  const vault = game.loot.find(l => l.kind === 'vault');
-  game.thief.x = vault.x; game.thief.y = vault.y;
-  for (let i = 0; i < 60 * 2; i++) step(game, 1 / 60, { dx: 0, dy: 0 });
-  ok('vault not cracked in 2s', !game.loot.find(l => l.kind === 'vault').taken);
-  game.tools.pick = true;
-  for (let i = 0; i < 60 * 2; i++) step(game, 1 / 60, { dx: 0, dy: 0 });
-  ok('vault cracked with lockpick in 4s', game.loot.find(l => l.kind === 'vault').taken);
+  const run = freshRun();
+  beginNight(run);
+  const w = run.wardens[0];
+  run.burglar.x = w.x + 60; run.burglar.y = w.y;
+  w.face = 0; w.nose = 1e9;
+  let tripped = false;
+  for (let i = 0; i < 60 * 10 && !tripped; i++) {
+    for (const e of advance(run, 1 / 60, { mx: 0, my: 0, dash: false, buy: null })) {
+      if (e.k === WHEN.CAUGHT) tripped = true;
+    }
+  }
+  ok('standing in a torch trips the alarm', tripped, `alarm=${run.alarm.toFixed(2)}`);
+  ok('the trip puts the run in the caught phase', run.phase === 'caught');
 }
 
-// --- escape --------------------------------------------------------------------
+// --- lifting and the clock -------------------------------------------------------
 {
-  const game = makeGame(level);
-  startRun(game);
-  game.grabbed = 1; game.haul = 220; game.clockRunning = true; game.clock = 60;
-  game.thief.x = level.exit.x; game.thief.y = level.exit.y;
-  let cleared = false;
-  for (let i = 0; i < 10; i++) for (const e of step(game, 1 / 60, { dx: 0, dy: 0 })) if (e.k === EVENTS.CLEARED) cleared = true;
-  ok('exit clears the run with loot', cleared && game.state === 'cleared');
+  const run = freshRun();
+  beginNight(run);
+  const item = run.loot.find(l => l.kind === 'case');
+  run.burglar.x = item.x; run.burglar.y = item.y;
+  for (let i = 0; i < 6; i++) advance(run, 1 / 60, { mx: 0, my: 0, dash: false, buy: null });
+  ok('a display case is lifted by walking onto it', run.loot.find(l => l.kind === 'case').gone);
+  ok('the haul counts the case', run.haul === 220, `haul=${run.haul}`);
+  ok('the getaway clock starts on the first piece', run.clockOn && run.clock > RAID.clock - 1, `clock=${run.clock.toFixed(1)}`);
 }
 
-// --- respawn after being caught ------------------------------------------------
+// --- the vault takes standing time ------------------------------------------------
 {
-  const game = makeGame(level);
-  startRun(game);
-  game.clockRunning = true; game.clock = 60;
-  game.state = 'caught'; game.flash = HEIST.flash - 0.01;
-  step(game, 0.02, null);
-  ok('respawn restores playing', game.state === 'playing');
-  ok('respawn docks the clock', game.clock <= 40.01, `clock=${game.clock.toFixed(1)}`);
-  ok('respawn resets the alarm', game.alarm === 0);
-  ok('respawn puts thief at start', game.thief.x === level.spawn.x && game.thief.y === level.spawn.y);
+  const run = freshRun();
+  beginNight(run);
+  const b = run.burglar;
+  const safeFloor = loadFloor(2);
+  run.floorNo = 2; run.floor = safeFloor;
+  run.loot = safeFloor.loot.map(l => ({ ...l }));
+  const safe = run.loot.find(l => l.kind === 'vault');
+  b.x = safe.x; b.y = safe.y;
+  for (let i = 0; i < 120; i++) advance(run, 1 / 60, { mx: 0, my: 0, dash: false, buy: null });
+  ok('the safe is not cracked in two seconds by hand', !run.loot.find(l => l.kind === 'vault').gone);
+  const run2 = freshRun();
+  beginNight(run2);
+  run2.floorNo = 2; run2.floor = loadFloor(2);
+  run2.loot = run2.floor.loot.map(l => ({ ...l }));
+  const safe2 = run2.loot.find(l => l.kind === 'vault');
+  run2.burglar.x = safe2.x; run2.burglar.y = safe2.y;
+  advance(run2, 1 / 60, { mx: 0, my: 0, dash: false, buy: 'crowbar' });
+  let drilled = false;
+  for (let i = 0; i < 60 * 2 && !drilled; i++) {
+    for (const e of advance(run2, 1 / 60, { mx: 0, my: 0, dash: false, buy: null })) if (e.k === WHEN.DRILLED) drilled = true;
+  }
+  ok('the crowbar cracks the safe inside two seconds', drilled);
+  ok('cracking the safe opens the vault door', !run2.floor.walls[run2.floor.door.ty][run2.floor.door.tx]);
 }
 
-// --- full playthrough: spawn → case → exit must be a real winnable route -------
+// --- gear costs its price ----------------------------------------------------------
 {
-  const game = makeGame(level);
-  startRun(game);
-  const goTo = async (target, seconds = 14) => {
-    // being caught respawns the thief at the entrance; keep steering and retry
-    for (let i = 0; i < 60 * seconds; i++) {
-      if (game.state === 'cleared') return true;
-      const dx = target[0] - game.thief.x, dy = target[1] - game.thief.y;
-      if (Math.hypot(dx, dy) < 12) return true;
-      step(game, 1 / 60, { dx, dy, sprint: false });
+  const run = freshRun();
+  beginNight(run);
+  const before = run.purse;
+  advance(run, 1 / 60, { mx: 0, my: 0, dash: false, buy: 'flash' });
+  ok('buying gear spends the purse', run.purse === before - 55, `purse=${run.purse}`);
+  ok('the flashbulb blinds every camera', run.cameras.every(c => c.dark > 0));
+  const run2 = freshRun();
+  beginNight(run2);
+  run2.purse = 10;
+  advance(run2, 1 / 60, { mx: 0, my: 0, dash: false, buy: 'crowbar' });
+  ok('gear is refused without the money', !run2.kit.crowbar && run2.purse === 10);
+}
+
+// --- the stairs: locked until the floor pays ----------------------------------------
+{
+  const run = freshRun();
+  beginNight(run);
+  run.burglar.x = run.floor.stairs.x; run.burglar.y = run.floor.stairs.y;
+  for (let i = 0; i < 20; i++) advance(run, 1 / 60, { mx: 0, my: 0, dash: false, buy: null });
+  ok('the stairs stay locked with an empty bag', run.floorNo === 0);
+
+  const run2 = freshRun();
+  beginNight(run2);
+  const item = run2.loot.find(l => l.kind === 'case');
+  run2.burglar.x = item.x; run2.burglar.y = item.y;
+  advance(run2, 1 / 60, { mx: 0, my: 0, dash: false, buy: null });
+  run2.burglar.x = run2.floor.stairs.x; run2.burglar.y = run2.floor.stairs.y;
+  let down = false;
+  for (let i = 0; i < 6; i++) for (const e of advance(run2, 1 / 60, { mx: 0, my: 0, dash: false, buy: null })) if (e.k === WHEN.STAIRS) down = true;
+  ok('a paid floor opens the stairs', down && run2.floorNo === 1, `floor=${run2.floorNo} pieces=${run2.floorPieces}`);
+}
+
+// --- respawn after a trip -----------------------------------------------------------
+{
+  const run = freshRun();
+  beginNight(run);
+  const item = run.loot.find(l => l.kind === 'case');
+  run.burglar.x = item.x; run.burglar.y = item.y;
+  advance(run, 1 / 60, { mx: 0, my: 0, dash: false, buy: null });
+  run.clock = 60;
+  run.phase = 'caught'; run.fade = RAID.fade - 0.01;
+  advance(run, 0.02, { mx: 0, my: 0, dash: false, buy: null });
+  ok('the trip fades back into play', run.phase === 'play');
+  ok('the trip docks the clock', run.clock <= 60 - RAID.dock + 0.01, `clock=${run.clock.toFixed(1)}`);
+  ok('the trip clears the alarm', run.alarm === 0);
+  ok('the trip puts the burglar back at the entry',
+    run.burglar.x === run.floor.entry.x && run.burglar.y === run.floor.entry.y);
+}
+
+// --- a whole night, walked by a bot over BFS paths ------------------------------------
+function route(floor, from, to) {
+  const start = tileOf(from);
+  const goal = tileOf(to);
+  const keyOf = (tx, ty) => `${tx},${ty}`;
+  const prev = new Map();
+  const seen = new Set([keyOf(start.tx, start.ty)]);
+  const q = [start];
+  while (q.length) {
+    const { tx, ty } = q.shift();
+    if (tx === goal.tx && ty === goal.ty) break;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = tx + dx, ny = ty + dy, k = keyOf(nx, ny);
+      if (seen.has(k) || isWallTile(floor, nx, ny)) continue;
+      seen.add(k);
+      prev.set(k, { tx, ty });
+      q.push({ tx: nx, ty: ny });
+    }
+  }
+  const path = [];
+  let cur = { tx: goal.tx, ty: goal.ty };
+  if (!seen.has(keyOf(cur.tx, cur.ty))) return null;
+  while (!(cur.tx === start.tx && cur.ty === start.ty)) {
+    path.push(centre(cur.tx, cur.ty));
+    cur = prev.get(keyOf(cur.tx, cur.ty));
+    if (!cur) return null;
+  }
+  return path.reverse();
+}
+
+{
+  const run = freshRun();
+  beginNight(run);
+  let simTime = 0;
+  let buys = ['crowbar', 'slippers'];
+  const stepOnce = () => {
+    const buy = buys.shift() ?? null;
+    const events = advance(run, 1 / 60, { mx: 0, my: 0, dash: false, buy });
+    simTime += 1 / 60;
+    return events;
+  };
+  // walk to a point, following a fresh route from wherever the burglar is
+  const walkTo = (target, limit = 40) => {
+    let spent = 0;
+    while (spent < limit * 60) {
+      if (run.phase === 'cleared') return true;
+      if (run.phase === 'caught') { stepOnce(); spent++; continue; }
+      const p = route(run.floor, run.burglar, target);
+      if (!p) return false;
+      for (const wp of p) {
+        let guard = 0;
+        while (Math.hypot(wp.x - run.burglar.x, wp.y - run.burglar.y) > 4 && guard++ < 240) {
+          if (run.phase !== 'play') break;
+          const dx = wp.x - run.burglar.x, dy = wp.y - run.burglar.y;
+          advance(run, 1 / 60, { mx: dx, my: dy, dash: false, buy: buys.shift() ?? null });
+          simTime += 1 / 60; spent += 1;
+        }
+        if (run.phase !== 'play') break;
+      }
+      if (Math.hypot(target.x - run.burglar.x, target.y - run.burglar.y) < 8) return true;
+      if (run.phase === 'play') spent += 30;
     }
     return false;
   };
-  const caseAt = [13 * TILE + 20, 4 * TILE + 20];   // display case in the north plinth
-  const exitAt = [level.exit.x, level.exit.y];
-  const leg1 = await goTo([420, 300]);               // into the corridor
-  ok('route: corridor', leg1 && game.state === 'playing');
-  const leg2 = await goTo([360, 220]);               // up the col-8/9 gap into the gallery row
-  ok('route: into the plinth', leg2 && game.state === 'playing');
-  const leg3 = await goTo(caseAt);                   // grab the case
-  ok('route: case taken on the way', game.loot.find(l => l.kind === 'case').taken);
-  const leg4 = await goTo([360, 220]) && await goTo([420, 300]); // back out to the corridor
-  ok('route: back out', leg4 && game.state === 'playing');
-  const leg5 = await goTo(exitAt, 20);               // straight down the corridor to the EXIT
-  ok('route: full heist clears', leg5 && game.state === 'cleared',
-    `state=${game.state} alarm=${game.alarm.toFixed(2)} at=${Math.round(game.thief.x)},${Math.round(game.thief.y)}`);
+
+  let cleared = false;
+  for (let f = 0; f < 3 && !cleared; f++) {
+    ok(`walk: on floor ${f + 1}`, run.floorNo === f, `floor=${run.floorNo}`);
+    for (const item of [...run.loot]) {
+      if (item.gone) continue;
+      if (item.kind === 'vault') {
+        const reached = walkTo(item);
+        ok(`walk: reached the safe on floor ${f + 1}`, reached, `at=${Math.round(run.burglar.x)},${Math.round(run.burglar.y)}`);
+        for (let i = 0; i < 60 * 8 && !run.loot.find(l => l.kind === 'vault').gone; i++) {
+          if (run.phase !== 'play') break;
+          advance(run, 1 / 60, { mx: 0, my: 0, dash: false, buy: null });
+          simTime += 1 / 60;
+        }
+        ok(`walk: the safe opens on floor ${f + 1}`, run.loot.find(l => l.kind === 'vault').gone);
+      } else {
+        ok(`walk: took the ${item.kind} on floor ${f + 1}`, walkTo(item));
+      }
+    }
+    const paid = walkTo(run.floor.stairs);
+    ok(`walk: reached the stairs on floor ${f + 1}`, paid, `at=${Math.round(run.burglar.x)},${Math.round(run.burglar.y)}`);
+    if (f < 2) {
+      // standing on the stairs is what takes them
+      for (let i = 0; i < 30 && run.floorNo === f; i++) advance(run, 1 / 60, { mx: 0, my: 0, dash: false, buy: null });
+      ok(`walk: down the stairs to floor ${f + 2}`, run.floorNo === f + 1);
+    }
+    if (run.phase === 'cleared') cleared = true;
+  }
+  for (let i = 0; i < 60 && run.phase !== 'cleared'; i++) advance(run, 1 / 60, { mx: 0, my: 0, dash: false, buy: null });
+  ok('walk: the night ends out of the building', run.phase === 'cleared', `phase=${run.phase} floor=${run.floorNo}`);
+  ok('walk: the whole night fits a sane clock', simTime < 900, `sim=${simTime.toFixed(0)}s`);
+  ok('walk: the haul is the full museum', run.haul === 3 * 380 + 2 * 220 + 650, `haul=${run.haul}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -1,6 +1,12 @@
 {
-  "name": "museum-after-hours",
+  "name": "vault-runner",
   "private": true,
   "type": "module",
-  "description": "A one-screen stealth heist game for the make.fun best-heist-game bounty."
+  "description": "A three-floor stealth heist: read the torches, lift the loot, outrun the clock.",
+  "scripts": {
+    "play": "node serve.ts",
+    "hand-in": "node main.ts",
+    "shots": "node tools/capture.cjs",
+    "check": "node tools/test.mjs"
+  }
 }

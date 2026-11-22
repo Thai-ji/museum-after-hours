@@ -1,0 +1,37 @@
+{
+  "at": "2026-11-22T09:43:12.897Z",
+  "records": [
+    {
+      "file": "1-cover.jpg",
+      "shot": "cover",
+      "width": 1280,
+      "height": 720,
+      "bytes": 54088,
+      "ok": true
+    },
+    {
+      "file": "2-vault.jpg",
+      "shot": "vault",
+      "width": 1280,
+      "height": 720,
+      "bytes": 54834,
+      "ok": true
+    },
+    {
+      "file": "3-caught.jpg",
+      "shot": "caught",
+      "width": 1280,
+      "height": 720,
+      "bytes": 51636,
+      "ok": true
+    },
+    {
+      "file": "4-title.jpg",
+      "shot": "title",
+      "width": 1280,
+      "height": 720,
+      "bytes": 51307,
+      "ok": true
+    }
+  ]
+}
