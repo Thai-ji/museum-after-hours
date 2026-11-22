@@ -72,7 +72,17 @@ export function backdrop(floor, lush = false) {
     }
   }
   ctx.globalCompositeOperation = 'lighter';
-  for (const [x, y] of pools) halo(ctx, x, y, 128, '255,205,130', 0.18);
+  for (const [x, y] of pools) {
+    halo(ctx, x, y, 128, '255,205,130', 0.18);
+    // a hotter core, so the lamp has a source and not just a wash of light
+    halo(ctx, x, y, 44, '255,228,176', 0.24);
+    // polished marble mirrors the lamp: a soft vertical streak under it
+    const mirror = ctx.createLinearGradient(0, y, 0, y + 86);
+    mirror.addColorStop(0, 'rgba(255,214,150,0.14)');
+    mirror.addColorStop(1, 'rgba(255,214,150,0)');
+    ctx.fillStyle = mirror;
+    ctx.beginPath(); ctx.ellipse(x, y + 40, 24, 42, 0, 0, Math.PI * 2); ctx.fill();
+  }
   ctx.globalCompositeOperation = 'source-over';
 
   // ---- air ducts: dark channel, slatted grate
@@ -122,6 +132,11 @@ export function backdrop(floor, lush = false) {
       ctx.strokeStyle = 'rgba(6,10,20,0.6)';
       ctx.lineWidth = 1;
       ctx.strokeRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1);
+      // cornice: a moulding line along the wall face, so walls have depth
+      ctx.fillStyle = 'rgba(226,238,255,0.15)';
+      ctx.fillRect(x + 3, y + CELL - 11, CELL - 6, 1);
+      ctx.fillStyle = 'rgba(0,0,0,0.34)';
+      ctx.fillRect(x + 3, y + CELL - 10, CELL - 6, 1);
       if (noise(tx * 3, ty * 7) > 0.86) {
         ctx.fillStyle = 'rgba(243,198,107,0.16)';
         ctx.fillRect(x + 6, y + CELL / 2, CELL - 12, 1);
@@ -284,7 +299,7 @@ function decor(ctx, floor) {
   pilaster(116, 302);
   pilaster(116, 540);
 
-  // an empty display vitrine: brass base, glass box, nothing inside
+  // a display vitrine: brass base, glass box, a bust on show, glass sheen
   const vitrine = (x, y) => {
     ctx.fillStyle = 'rgba(0,0,0,0.42)';
     ctx.beginPath(); ctx.ellipse(x, y + 18, 18, 6, 0, 0, Math.PI * 2); ctx.fill();
@@ -292,10 +307,18 @@ function decor(ctx, floor) {
     rrect(ctx, x - 16, y + 8, 32, 10, 2); ctx.fill();
     ctx.fillStyle = 'rgba(190,220,255,0.09)';
     rrect(ctx, x - 14, y - 18, 28, 28, 3); ctx.fill();
+    // what is on show: a small brass bust, so the glass is not an empty box
+    ctx.fillStyle = 'rgba(243,201,107,0.50)';
+    ctx.beginPath(); ctx.arc(x, y - 4, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(243,201,107,0.28)';
+    ctx.fillRect(x - 4.5, y + 1, 9, 6);
     ctx.strokeStyle = 'rgba(208,232,255,0.55)'; ctx.lineWidth = 1.3;
     rrect(ctx, x - 14, y - 18, 28, 28, 3); ctx.stroke();
     ctx.strokeStyle = 'rgba(255,255,255,0.32)'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(x - 9, y - 15); ctx.lineTo(x - 9, y + 6); ctx.stroke();
+    // one diagonal highlight across the glass: reads as plate glass
+    ctx.strokeStyle = 'rgba(255,255,255,0.20)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x + 4, y + 7); ctx.lineTo(x + 11, y - 13); ctx.stroke();
   };
   vitrine(268, 356);
   vitrine(930, 556);

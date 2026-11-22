@@ -6,6 +6,8 @@
 
 Entry for [best-heist-game · 2026-11-22](https://make.fun/competitions/best-heist-game-20261122-0559) — a three-floor stealth heist in one page of standard JavaScript. No engine, no build, no network: open `game/index.html` and the museum is open for business.
 
+Bounty page: <https://make.fun/bounty/best-heist-game-20261122-0559> — the prize split and the judge's rubric in the competition's own words.
+
 You are the burglar. Three floors, two torches each, a lens on every landing, and one clock that only starts once you touch the first piece. Slip past the cones of light, lift what the museum has on show, crack the vault on the last floor, and be on the stairs before the clock dies. The alarm does not forgive: spotted too long and you are dragged back to the service door with time docked. Ducts crawl slow but hide you; a dash is fast but loud.
 
 ## The night, floor by floor

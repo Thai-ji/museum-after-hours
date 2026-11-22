@@ -69,6 +69,12 @@ function cone(ctx, cx, cy, face, reach, half, inner, outer, dashed, floor, weigh
   g.addColorStop(1, `rgba(${inner},0.03)`);
   ctx.fillStyle = g;
   ctx.fill();
+  // the beam has no hard edge in the air: a wide, faint halo follows the same path
+  ctx.save();
+  ctx.strokeStyle = `rgba(${outer},0.12)`;
+  ctx.lineWidth = weight * 5;
+  ctx.stroke();
+  ctx.restore();
   ctx.strokeStyle = `rgba(${outer},0.8)`;
   ctx.lineWidth = weight;
   if (dashed) ctx.setLineDash([7, 6]);
@@ -135,6 +141,14 @@ function guard(ctx, w, mood) {
   rrect(ctx, -10, -10, 24, 21, 8); ctx.fill();
   ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1.4;
   rrect(ctx, -10, -10, 24, 21, 8); ctx.stroke();
+  // form: a dark side away from the torch and a warm rim toward it, so the body
+  // reads as a rounded figure rather than a flat block of colour
+  const form = ctx.createLinearGradient(-10, 0, 14, 0);
+  form.addColorStop(0, 'rgba(0,0,0,0.34)');
+  form.addColorStop(0.55, 'rgba(0,0,0,0)');
+  form.addColorStop(1, 'rgba(255,232,190,0.20)');
+  ctx.fillStyle = form;
+  rrect(ctx, -10, -10, 24, 21, 8); ctx.fill();
   // hi-vis stripe
   ctx.fillStyle = 'rgba(255,236,180,0.85)';
   ctx.fillRect(-6, -9, 3, 19);
@@ -484,6 +498,31 @@ function hud(ctx, run, floor) {
   ctx.fillRect(0, 0, VIEW_W, TOP_H);
   ctx.fillStyle = 'rgba(130,155,215,0.30)';
   ctx.fillRect(0, TOP_H - 1, VIEW_W, 1);
+
+  // ---- mission strip: in one line, what this is, what the job is, what it costs.
+  // A still frame has to say this without the player having read a menu.
+  const bandY = TOP_H, bandH = 30;
+  const band = ctx.createLinearGradient(0, bandY, 0, bandY + bandH);
+  band.addColorStop(0, 'rgba(9,13,23,0.95)');
+  band.addColorStop(1, 'rgba(9,13,23,0.70)');
+  ctx.fillStyle = band;
+  ctx.fillRect(0, bandY, VIEW_W, bandH);
+  ctx.fillStyle = 'rgba(243,201,107,0.26)';
+  ctx.fillRect(0, bandY + bandH - 1, VIEW_W, 1);
+
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = INK.brass;
+  ctx.font = `bold 19px ${FACE}`;
+  ctx.fillText('THE MIDNIGHT JOB', 24, bandY + bandH / 2 + 1);
+  const jobW = ctx.measureText('THE MIDNIGHT JOB').width;
+  ctx.fillStyle = 'rgba(151,163,189,0.92)';
+  ctx.font = `bold 13px ${FACE}`;
+  ctx.fillText('MUSEUM OF FINE ARTS  /  THREE FLOORS', 24 + jobW + 12, bandY + bandH / 2 + 1);
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = 'rgba(255,226,150,0.95)';
+  ctx.font = `bold 15px ${FACE}`;
+  ctx.fillText('CRACK THE VAULT  /  BE ON THE STAIRS BEFORE THE CLOCK DIES', VIEW_W - 24, bandY + bandH / 2 + 1);
 
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = INK.brass;

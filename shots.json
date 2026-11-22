@@ -1,12 +1,12 @@
 {
-  "at": "2026-11-22T13:50:00.341Z",
+  "at": "2026-11-22T15:18:37.950Z",
   "records": [
     {
       "file": "1-cover.jpg",
       "shot": "cover",
       "width": 1280,
       "height": 720,
-      "bytes": 117941,
+      "bytes": 137469,
       "ok": true
     },
     {
@@ -14,7 +14,7 @@
       "shot": "drill",
       "width": 1280,
       "height": 720,
-      "bytes": 125094,
+      "bytes": 140476,
       "ok": true
     },
     {
@@ -22,7 +22,7 @@
       "shot": "lockdown",
       "width": 1280,
       "height": 720,
-      "bytes": 118978,
+      "bytes": 132736,
       "ok": true
     },
     {
@@ -30,7 +30,7 @@
       "shot": "escape",
       "width": 1280,
       "height": 720,
-      "bytes": 92091,
+      "bytes": 102366,
       "ok": true
     }
   ]
