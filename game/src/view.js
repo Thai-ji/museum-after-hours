@@ -202,9 +202,20 @@ function camera(ctx, c, hot) {
 
 function burglar(ctx, run) {
   const b = run.burglar;
+  const hero = run.heroScale || 1;
   ctx.save();
   ctx.translate(b.x, b.y);
+  if (hero > 1) {
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 84);
+    g.addColorStop(0, 'rgba(255,182,112,0.17)');
+    g.addColorStop(1, 'rgba(255,182,112,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(0, 0, 84, 0, Math.PI * 2); ctx.fill();
+  }
   halo(ctx, 0, 0, 44, '92,232,192', 0.34);
+  ctx.scale(hero, hero);
+  ctx.fillStyle = 'rgba(255,170,100,0.13)';
+  ctx.beginPath(); ctx.ellipse(0, 15, 30, 11, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.beginPath(); ctx.ellipse(0, 12, 14, 5.5, 0, 0, Math.PI * 2); ctx.fill();
   // hooded coat
@@ -216,18 +227,33 @@ function burglar(ctx, run) {
   ctx.closePath();
   ctx.fillStyle = INK.burglar;
   ctx.fill();
-  ctx.strokeStyle = 'rgba(240,255,250,0.9)';
-  ctx.lineWidth = 2;
+  // the warm rim: a lit edge so the one moving body reads at 768 wide
+  ctx.strokeStyle = 'rgba(255,196,132,0.62)';
+  ctx.lineWidth = 2.2;
   ctx.stroke();
+  // the light comes from the upper left, so only that edge is white
+  ctx.strokeStyle = 'rgba(240,255,250,0.85)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(-11, 4);
+  ctx.quadraticCurveTo(-14, -11, 0, -17);
+  ctx.stroke();
+  // brim of the hood, so the silhouette is a thief and not a blob
+  ctx.fillStyle = '#0d272b';
+  ctx.beginPath(); ctx.ellipse(0, -16, 9.5, 2.6, 0, 0, Math.PI * 2); ctx.fill();
+  // strap and kit bag
+  ctx.strokeStyle = 'rgba(8,20,26,0.85)';
+  ctx.lineWidth = 2.2;
+  ctx.beginPath(); ctx.moveTo(-7, -6); ctx.lineTo(9, 5); ctx.stroke();
   // the kit bag over the shoulder
   ctx.fillStyle = '#17342c';
   ctx.beginPath(); ctx.arc(8, 4, 5, 0, Math.PI * 2); ctx.fill();
   // mask
   ctx.fillStyle = '#08111f';
-  rrect(ctx, -6, -13, 12, 8, 3); ctx.fill();
+  rrect(ctx, -6.4, -12.6, 12.8, 7.2, 3); ctx.fill();
   ctx.fillStyle = 'rgba(150,255,225,0.95)';
-  ctx.fillRect(-4, -10, 2.6, 2);
-  ctx.fillRect(1.4, -10, 2.6, 2);
+  ctx.fillRect(-4.2, -9.9, 2.7, 2.1);
+  ctx.fillRect(1.6, -9.9, 2.7, 2.1);
   ctx.restore();
 
   // the bag: every piece on him shows as a small cut stone riding with him
@@ -235,8 +261,8 @@ function burglar(ctx, run) {
     const n = Math.min(3, run.pieces);
     for (let i = 0; i < n; i++) {
       const a = run.t * 1.4 + i * 2.1;
-      const px = b.x + Math.cos(a) * 15;
-      const py = b.y - 24 + Math.sin(a) * 3;
+      const px = b.x + Math.cos(a) * 15 * hero;
+      const py = b.y - 24 * hero + Math.sin(a) * 3 * hero;
       ctx.fillStyle = 'rgba(255,224,150,0.85)';
       ctx.beginPath();
       ctx.moveTo(px, py - 4);
@@ -271,6 +297,33 @@ function burglar(ctx, run) {
     halo(ctx, run.smoke.x, run.smoke.y, 96, '210,225,245', 0.30 * k);
     ctx.restore();
   }
+}
+
+// ---------------------------------------------------------------- footprints
+// The cover points the eye at the burglar: a line of warm prints shows the
+// route he has just run, from the service door to the atrium.
+
+function footprints(ctx, run) {
+  if (!run.trail || run.trail.length < 2) return;
+  const pts = run.trail;
+  ctx.save();
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    const q = pts[Math.min(i + 1, pts.length - 1)];
+    const a = Math.atan2(q.y - p.y, q.x - p.x);
+    const k = i / Math.max(1, pts.length - 1);
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(a);
+    ctx.fillStyle = `rgba(255,206,150,${0.20 + 0.42 * k})`;
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(s * 6, 0, 4.2, 8.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  ctx.restore();
 }
 
 // ---------------------------------------------------------------- loot
@@ -691,6 +744,7 @@ export function paint(ctx, run, floor, still) {
   ctx.drawImage(still, 0, 0);
   vaultDoor(ctx, floor);
   lights(ctx, run, floor);
+  footprints(ctx, run);
   drawLoot(ctx, run);
   for (const w of run.wardens) guard(ctx, w, guardMood(floor, run, w));
   for (const c of run.cameras) {

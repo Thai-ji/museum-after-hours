@@ -8,7 +8,7 @@ import {
 } from './tuning.js';
 import { canvasOf, rrect, noise, halo } from './art.js';
 
-export function backdrop(floor) {
+export function backdrop(floor, lush = false) {
   const c = canvasOf(VIEW_W, VIEW_H);
   const ctx = c.getContext('2d');
   const W = floor.walls;
@@ -173,6 +173,9 @@ export function backdrop(floor) {
     }
   }
 
+  // ---- on the cover only: the parts of the court that are pure furniture
+  if (lush) decor(ctx, floor);
+
   // ---- the way out: green stairwell glow, readable even shrunk
   const st = floor.stairs;
   ctx.save();
@@ -203,4 +206,97 @@ export function backdrop(floor) {
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 
   return c;
+}
+
+// ---------------------------------------------------------------- furniture
+// The cover frame only: a runner, benches, plinths and two empty vitrines.
+// Nothing here collides, blocks sight or pays. It is the museum's furniture,
+// so the wide shot reads as a room instead of an empty plan.
+
+function decor(ctx, floor) {
+  // the runner: service door -> atrium -> vault court
+  const path = [[150, 130], [200, 230], [265, 335], [325, 420], [395, 500]];
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(26,18,44,0.92)';
+  ctx.lineWidth = 52;
+  ctx.beginPath();
+  ctx.moveTo(path[0][0], path[0][1]);
+  for (const [x, y] of path) ctx.lineTo(x, y);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(52,36,82,0.94)';
+  ctx.lineWidth = 40;
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(243,201,107,0.30)';
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+  ctx.restore();
+
+  // brass studs along the runner
+  ctx.fillStyle = 'rgba(243,201,107,0.34)';
+  for (let i = 1; i < path.length; i++) {
+    const [ax, ay] = path[i - 1], [bx, by] = path[i];
+    const n = 3;
+    for (let j = 1; j <= n; j++) {
+      const t = j / (n + 1);
+      const x = ax + (bx - ax) * t, y = ay + (by - ay) * t;
+      const a = Math.atan2(by - ay, bx - ax);
+      for (const s of [-15, 15]) {
+        ctx.beginPath();
+        ctx.arc(x + Math.cos(a + Math.PI / 2) * s, y + Math.sin(a + Math.PI / 2) * s, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // a wooden bench against the wall
+  const bench = (x, y, w) => {
+    ctx.fillStyle = 'rgba(0,0,0,0.42)';
+    ctx.beginPath(); ctx.ellipse(x + w / 2, y + 9, w / 2, 7, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#2a1a2c';
+    rrect(ctx, x, y - 2, w, 13, 4); ctx.fill();
+    ctx.fillStyle = '#3d2739';
+    rrect(ctx, x + 2, y - 14, w - 4, 4, 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(243,201,107,0.30)'; ctx.lineWidth = 1.1;
+    rrect(ctx, x, y - 2, w, 13, 4); ctx.stroke();
+    ctx.fillStyle = '#171021';
+    ctx.fillRect(x + 7, y + 10, 4, 8);
+    ctx.fillRect(x + w - 11, y + 10, 4, 8);
+  };
+  bench(160, 598, 120);
+  bench(770, 612, 130);
+  bench(1058, 316, 86);
+
+  // a marble pilaster on a brass foot
+  const pilaster = (x, y) => {
+    ctx.fillStyle = 'rgba(0,0,0,0.42)';
+    ctx.beginPath(); ctx.ellipse(x, y + 15, 16, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#3d4f74';
+    ctx.beginPath(); ctx.arc(x, y, 13, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#55688f';
+    ctx.beginPath(); ctx.arc(x - 3, y - 3, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(243,201,107,0.5)'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(x, y, 13, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = 'rgba(8,13,24,0.5)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.stroke();
+  };
+  pilaster(116, 302);
+  pilaster(116, 540);
+
+  // an empty display vitrine: brass base, glass box, nothing inside
+  const vitrine = (x, y) => {
+    ctx.fillStyle = 'rgba(0,0,0,0.42)';
+    ctx.beginPath(); ctx.ellipse(x, y + 18, 18, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = INK.brassDim;
+    rrect(ctx, x - 16, y + 8, 32, 10, 2); ctx.fill();
+    ctx.fillStyle = 'rgba(190,220,255,0.09)';
+    rrect(ctx, x - 14, y - 18, 28, 28, 3); ctx.fill();
+    ctx.strokeStyle = 'rgba(208,232,255,0.55)'; ctx.lineWidth = 1.3;
+    rrect(ctx, x - 14, y - 18, 28, 28, 3); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.32)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x - 9, y - 15); ctx.lineTo(x - 9, y + 6); ctx.stroke();
+  };
+  vitrine(268, 356);
+  vitrine(930, 556);
 }

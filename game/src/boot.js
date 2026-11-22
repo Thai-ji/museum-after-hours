@@ -16,8 +16,8 @@ let still = backdrop(run.floor);
 const at = (tx, ty) => ({ x: tx * CELL + CELL / 2, y: ty * CELL + CELL / 2 });
 const beatFace = w => Math.atan2(w.beat[1][1] - w.beat[0][1], w.beat[1][0] - w.beat[0][0]);
 
-function reloadStill() {
-  still = backdrop(run.floor);
+function reloadStill(lush = false) {
+  still = backdrop(run.floor, lush);
 }
 
 // ---------------------------------------------------------------- staging
@@ -36,10 +36,10 @@ function stage(kind) {
   document.body.classList.add('still');
   if (kind !== 'title') beginNight(run);
 
-  const setFloor = (n) => {
+  const setFloor = (n, lush = false) => {
     run.floorNo = n;
     run.floor = loadFloor(n);
-    reloadStill();
+    reloadStill(lush);
     run.wardens = run.floor.wardens.map(w => ({ ...w, face: beatFace(w), aim: w.beat[0], rest: 0, nose: 0 }));
     run.cameras = run.floor.cameras.map(c => ({ ...c, face: c.gaze, phase: 0, dark: 0 }));
     run.loot = run.floor.loot.map(l => ({ ...l }));
@@ -50,19 +50,27 @@ function stage(kind) {
   };
 
   if (kind === 'cover') {
-    setFloor(2);
+    setFloor(2, true);
     run.view = { s: 0.82, x: 640, y: 360 };
-    const b = at(12, 11);
+    // the hero cut: bigger, rim-lit, on the runner between the beams, with the
+    // prints of the run that got him here
+    const b = at(12, 12);
     run.burglar.x = b.x; run.burglar.y = b.y;
+    run.heroScale = 1.55;
+    run.trail = [
+      { x: 150, y: 130 }, { x: 180, y: 195 }, { x: 215, y: 260 },
+      { x: 255, y: 320 }, { x: 300, y: 375 }, { x: 350, y: 420 },
+      { x: 400, y: 455 }, { x: 455, y: 480 }, { x: 500, y: 500 },
+    ];
     run.pieces = 3; run.haul = 980; run.floorPieces = 0;
     run.clockOn = true; run.clock = 74.6;
     run.alarm = 0.42;
     run.purse = 25; run.kit = { crowbar: true, flash: true };
     const w = run.wardens;
-    w[0].x = at(8, 7).x; w[0].y = at(8, 7).y; w[0].face = 0.28;
+    w[0].x = at(8, 7).x; w[0].y = at(8, 7).y; w[0].face = 0.15;
     w[1].x = at(16, 5).x; w[1].y = at(16, 5).y; w[1].face = Math.PI / 2; w[1].nose = 1.2;
     w[2].x = at(25, 12).x; w[2].y = at(25, 12).y; w[2].face = Math.PI;
-    run.cameras[0].face = Math.PI / 2;
+    run.cameras[0].face = 0.45;
     run.cameras[1].face = Math.PI / 2;
   } else if (kind === 'drill') {
     setFloor(2);
