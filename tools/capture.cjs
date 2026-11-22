@@ -1,7 +1,7 @@
-// tools/capture.cjs — the screenshot rig. Boots a tiny static server for game/,
+// tools/capture.cjs 鈥?the screenshot rig. Boots a tiny static server for game/,
 // drives desktop Chrome headless over CDP (Node 22's built-in WebSocket client),
 // loads each ?shot= staged frame, waits for the frame to be drawn, captures the
-// viewport at exactly 1280x720 as JPEG ≤256 KiB, and records shots.json.
+// viewport at exactly 1280x720 as JPEG 鈮?56 KiB, and records shots.json.
 // The shots are taken against the real game: no stubs, no fakes.
 const { spawn } = require('node:child_process');
 const { writeFileSync, readFileSync, mkdirSync } = require('node:fs');
@@ -16,9 +16,9 @@ const NODE = process.execPath;
 
 const SHOTS = [
   ['1-cover.jpg', 'cover'],
-  ['2-vault.jpg', 'vault'],
-  ['3-caught.jpg', 'caught'],
-  ['4-title.jpg', 'title'],
+  ['2-gallery.jpg', 'gallery'],
+  ['3-alarm.jpg', 'alarm'],
+  ['4-escape.jpg', 'escape'],
 ];
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));

@@ -1,4 +1,4 @@
-// tuning.js — every number the heist runs on, in one place, so a balance pass
+﻿// tuning.js 鈥?every number the heist runs on, in one place, so a balance pass
 // never has to hunt through the renderer or the rules.
 export const CELL = 40;             // px per tile
 export const GRID_W = 32, GRID_H = 18;
@@ -64,20 +64,21 @@ export const VALUE = { case: 220, gem: 380, vault: 650 };
 
 // Palette: cold museum marble for cover, brass for valuable, red for danger.
 export const INK = {
-  void: '#06080f',
-  slab: '#0f1626',
-  slabAlt: '#121a2c',
-  marble: '#232f4a',
-  marbleLit: '#33436a',
-  brass: '#f0c463',
+  void: '#05070d',
+  slab: '#182134',
+  slabAlt: '#1d2841',
+  marble: '#2c3b5c',
+  marbleLit: '#4a5c88',
+  brass: '#f3c96b',
   brassDim: '#8a6f32',
-  burglar: '#61e6c0',
-  warden: '#e14d4d',
-  wardenCone: 'rgba(225,77,77,0.22)',
-  eye: '#f5b544',
-  eyeCone: 'rgba(245,181,68,0.17)',
-  stairs: '#69de8c',
-  text: '#e6ecf8',
-  textDim: '#8f9ab4',
-  alarm: '#ff5f5f',
+  burglar: '#5ce8c0',
+  warden: '#ff5a4f',
+  wardenCone: 'rgba(255,90,80,0.30)',
+  eye: '#ffc247',
+  eyeCone: 'rgba(255,194,71,0.22)',
+  stairs: '#5ff0a0',
+  text: '#eef3ff',
+  textDim: '#97a3bd',
+  alarm: '#ff4d57',
 };
+

@@ -3,3 +3,6 @@ out*/
 .chrome-tmp*/
 .chrome-hand/
 *.log
+
+judge-view-mock.png
+.chrome-*/
