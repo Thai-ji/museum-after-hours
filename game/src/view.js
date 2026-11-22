@@ -1,310 +1,275 @@
-// view.js 鈥?the museum at night. A still backdrop is painted once per floor
-// (marble floor, ceiling pools, walls, the vault door, props) and blitted after;
-// on top go the torch and lens cones, the loot, the cast, the alarm HUD.
-// Every frame the screenshots show is a state the rules really produced.
+// view.js - the museum at night: what the player sees. A still backdrop is
+// painted once per floor (props.js) and blitted after; on top go the torch and
+// lens cones, the vault door, the loot, the cast, and the HUD. A warden is
+// drawn in one of three states (calm / ? / !) so his intent is legible in a
+// still frame. Every frame a screenshot shows is a state the rules produced.
 import {
-  CELL, GRID_W, GRID_H, VIEW_W, VIEW_H, WARDEN, EYE, ALARM, KIT, PURSE, INK, VALUE,
+  VIEW_W, VIEW_H, CELL, WARDEN, EYE, ALARM, KIT, PURSE, INK,
 } from './tuning.js';
+import { catches } from './detection.js';
+import { moodOf } from './alarm.js';
+import { drillShare } from './vault.js';
+import { FACE, rrect, halo } from './art.js';
 
-const FACE = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
-const TRAY_Y = VIEW_H - 64;
+const TOP_H = 88;
+const TRAY_Y = VIEW_H - 76;
 
-const canvasOf = (w, h) => {
-  const c = document.createElement('canvas');
-  c.width = w; c.height = h;
-  return c;
+const STATE_COLOR = {
+  calm: '#5ff0a0',
+  suspicious: '#ffc247',
+  alert: '#ff7a4d',
+  lockdown: '#ff2f44',
+};
+const STATE_WORD = {
+  calm: 'CALM',
+  suspicious: 'SUSPECT',
+  alert: 'ALERT',
+  lockdown: 'LOCKDOWN',
 };
 
-const rrect = (ctx, x, y, w, h, r) => {
-  const rr = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + rr, y);
-  ctx.arcTo(x + w, y, x + w, y + h, rr);
-  ctx.arcTo(x + w, y + h, x, y + h, rr);
-  ctx.arcTo(x, y + h, x, y, rr);
-  ctx.arcTo(x, y, x + w, y, rr);
-  ctx.closePath();
+const mmss = s => {
+  const t = Math.max(0, s);
+  const m = Math.floor(t / 60);
+  const r = Math.floor(t % 60);
+  return `${m}:${String(r).padStart(2, '0')}`;
 };
-
-// a stable pseudo-random from tile coordinates, so the painted props never move
-const noise = (x, y) => {
-  const v = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
-  return v - Math.floor(v);
-};
-
-const halo = (ctx, x, y, r, rgb, a) => {
-  const g = ctx.createRadialGradient(x, y, 1, x, y, r);
-  g.addColorStop(0, `rgba(${rgb},${a})`);
-  g.addColorStop(1, `rgba(${rgb},0)`);
-  ctx.fillStyle = g;
-  ctx.fillRect(x - r, y - r, r * 2, r * 2);
-};
-
-// ---------------------------------------------------------------- backdrop
-
-export function backdrop(floor) {
-  const c = canvasOf(VIEW_W, VIEW_H);
-  const ctx = c.getContext('2d');
-  const W = floor.walls;
-  const open = (tx, ty) => tx >= 0 && ty >= 0 && tx < GRID_W && ty < GRID_H && !W[ty][tx];
-
-  ctx.fillStyle = INK.void;
-  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-
-  // ---- marble floor: alternating slabs, thin grout, faint veins
-  for (let ty = 0; ty < GRID_H; ty++) {
-    for (let tx = 0; tx < GRID_W; tx++) {
-      if (W[ty][tx]) continue;
-      const x = tx * CELL, y = ty * CELL;
-      const n = noise(tx, ty);
-      ctx.fillStyle = (tx + ty) % 2 ? INK.slab : INK.slabAlt;
-      ctx.fillRect(x, y, CELL, CELL);
-      if (n > 0.62) {
-        ctx.fillStyle = `rgba(150,180,240,${0.010 + n * 0.016})`;
-        ctx.fillRect(x + 3, y + 3, CELL - 6, CELL - 6);
-      }
-      ctx.fillStyle = 'rgba(4,7,14,0.5)';
-      ctx.fillRect(x, y + CELL - 1, CELL, 1);
-      ctx.fillRect(x + CELL - 1, y, 1, CELL);
-      // a marble vein
-      if (n > 0.9) {
-        ctx.strokeStyle = 'rgba(190,215,255,0.07)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(x + 5, y + CELL - 6);
-        ctx.quadraticCurveTo(x + CELL / 2, y + CELL / 2 + 4, x + CELL - 5, y + 7);
-        ctx.stroke();
-      }
-    }
-  }
-
-  // ---- ceiling pools: warm light on the marble, the room's only real light
-  const pools = [];
-  for (let ty = 2; ty < GRID_H - 2; ty += 5) {
-    for (let tx = 3; tx < GRID_W - 2; tx += 6) {
-      if (!open(tx, ty) || !open(tx, ty + 1)) continue;
-      pools.push([tx * CELL + CELL / 2, ty * CELL + CELL / 2 + 8]);
-    }
-  }
-  ctx.globalCompositeOperation = 'lighter';
-  for (const [x, y] of pools) halo(ctx, x, y, 128, '255,205,130', 0.18);
-  ctx.globalCompositeOperation = 'source-over';
-
-  // ---- air ducts: dark channel, slatted grate
-  for (let ty = 0; ty < GRID_H; ty++) {
-    for (let tx = 0; tx < GRID_W; tx++) {
-      if (!floor.vents[ty][tx]) continue;
-      const x = tx * CELL, y = ty * CELL;
-      ctx.fillStyle = '#05080f';
-      ctx.fillRect(x, y, CELL, CELL);
-      ctx.strokeStyle = 'rgba(110,140,205,0.30)';
-      ctx.lineWidth = 1;
-      for (let i = 1; i < 6; i++) {
-        ctx.beginPath();
-        ctx.moveTo(x + 3, y + i * 7);
-        ctx.lineTo(x + CELL - 3, y + i * 7);
-        ctx.stroke();
-      }
-      ctx.strokeStyle = 'rgba(110,140,205,0.45)';
-      ctx.strokeRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1);
-    }
-  }
-
-  // ---- wall shadow: walls throw a lip of shade onto the marble beside them
-  ctx.fillStyle = 'rgba(0,0,0,0.34)';
-  for (let ty = 0; ty < GRID_H; ty++) {
-    for (let tx = 0; tx < GRID_W; tx++) {
-      if (!W[ty][tx]) continue;
-      const x = tx * CELL, y = ty * CELL;
-      if (open(tx, ty + 1)) ctx.fillRect(x, y + CELL, CELL, 5);
-      if (open(tx + 1, ty)) ctx.fillRect(x + CELL, y, 5, CELL);
-    }
-  }
-
-  // ---- walls: marble blocks, bevel top, dark foot, brass inlay line
-  for (let ty = 0; ty < GRID_H; ty++) {
-    for (let tx = 0; tx < GRID_W; tx++) {
-      if (!W[ty][tx]) continue;
-      const x = tx * CELL, y = ty * CELL;
-      ctx.fillStyle = INK.marble;
-      ctx.fillRect(x, y, CELL, CELL);
-      ctx.fillStyle = INK.marbleLit;
-      ctx.fillRect(x, y, CELL, 4);
-      ctx.fillStyle = 'rgba(255,255,255,0.06)';
-      ctx.fillRect(x, y, 2, CELL);
-      ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.fillRect(x, y + CELL - 5, CELL, 5);
-      ctx.strokeStyle = 'rgba(6,10,20,0.6)';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1);
-      if (noise(tx * 3, ty * 7) > 0.86) {
-        ctx.fillStyle = 'rgba(243,198,107,0.16)';
-        ctx.fillRect(x + 6, y + CELL / 2, CELL - 12, 1);
-      }
-    }
-  }
-
-  // ---- museum props along the walls: a few plinths, framed paintings
-  for (let ty = 1; ty < GRID_H - 1; ty++) {
-    for (let tx = 1; tx < GRID_W - 1; tx++) {
-      if (W[ty][tx]) continue;
-      const n = noise(tx * 5, ty * 11);
-      const x = tx * CELL, y = ty * CELL;
-      const nearWall = W[ty - 1][tx] || W[ty + 1][tx] || W[ty][tx - 1] || W[ty][tx + 1];
-      if (nearWall && n > 0.93) {
-        // a stone plinth with a dim bust on it
-        ctx.fillStyle = 'rgba(0,0,0,0.45)';
-        ctx.beginPath(); ctx.ellipse(x + CELL / 2, y + CELL - 8, 13, 4.5, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#1c2536';
-        rrect(ctx, x + 9, y + 13, CELL - 18, CELL - 21, 3); ctx.fill();
-        ctx.fillStyle = '#31415f';
-        rrect(ctx, x + 9, y + 13, CELL - 18, 4, 2); ctx.fill();
-        ctx.fillStyle = 'rgba(206,220,245,0.28)';
-        ctx.beginPath(); ctx.arc(x + CELL / 2, y + 9, 6, 0, Math.PI * 2); ctx.fill();
-      }
-    }
-  }
-
-  // ---- paintings hung on the walls: a brass frame and a lit canvas
-  for (let ty = 1; ty < GRID_H - 1; ty++) {
-    for (let tx = 1; tx < GRID_W - 1; tx++) {
-      if (!W[ty][tx]) continue;
-      const n = noise(tx * 13, ty * 7);
-      if (n < 0.55) continue;
-      const below = open(tx, ty + 1);
-      if (!below) continue;
-      const x = tx * CELL, y = ty * CELL;
-      const hue = Math.floor(n * 360);
-      ctx.fillStyle = 'rgba(6,10,18,0.9)';
-      ctx.fillRect(x + 7, y + 6, CELL - 14, 20);
-      const art = ctx.createLinearGradient(x + 9, y + 8, x + CELL - 9, y + 24);
-      art.addColorStop(0, `hsla(${hue}, 58%, 46%, 0.85)`);
-      art.addColorStop(1, `hsla(${(hue + 70) % 360}, 46%, 28%, 0.85)`);
-      ctx.fillStyle = art;
-      ctx.fillRect(x + 9, y + 8, CELL - 18, 16);
-      ctx.strokeStyle = 'rgba(243,198,107,0.55)';
-      ctx.lineWidth = 1.4;
-      ctx.strokeRect(x + 8, y + 7, CELL - 16, 18);
-      ctx.fillStyle = 'rgba(255,225,160,0.35)';
-      ctx.fillRect(x + 12, y + 3, CELL - 24, 2);
-    }
-  }
-
-  // ---- the way out: green stairwell glow, readable even shrunk
-  const st = floor.stairs;
-  ctx.save();
-  ctx.translate(st.x, st.y);
-  halo(ctx, 0, 0, 62, '90,240,150', 0.30);
-  ctx.fillStyle = 'rgba(80,225,140,0.18)';
-  rrect(ctx, -19, -19, 38, 38, 5); ctx.fill();
-  ctx.strokeStyle = INK.stairs;
-  ctx.lineWidth = 2.4;
-  rrect(ctx, -19, -19, 38, 38, 5); ctx.stroke();
-  // a descending chevron
-  ctx.strokeStyle = INK.stairs;
-  ctx.lineWidth = 2.2;
-  ctx.beginPath();
-  ctx.moveTo(-8, -8); ctx.lineTo(0, 2); ctx.lineTo(8, -8);
-  ctx.moveTo(-8, 2); ctx.lineTo(0, 12); ctx.lineTo(8, 2);
-  ctx.stroke();
-  ctx.fillStyle = INK.stairs;
-  ctx.font = `bold 9px ${FACE}`;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(floor.index === 2 ? 'OUT' : 'DOWN', 0, 24);
-  ctx.restore();
-
-  // ---- the vault door: a round steel leaf in the wall, lit, unmistakable
-  if (floor.door) {
-    const { x, y } = floor.door;
-    ctx.save();
-    ctx.translate(x, y);
-    halo(ctx, 0, 0, 78, '243,198,107', 0.20);
-    // the stone arch it sits in
-    ctx.fillStyle = '#0c1320';
-    ctx.beginPath(); ctx.arc(0, 0, 34, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#1b2740'; ctx.lineWidth = 6;
-    ctx.beginPath(); ctx.arc(0, 0, 34, 0, Math.PI * 2); ctx.stroke();
-    // the leaf
-    ctx.fillStyle = '#3c4d63';
-    ctx.beginPath(); ctx.arc(0, 0, 27, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = INK.brass; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(0, 0, 27, 0, Math.PI * 2); ctx.stroke();
-    // spokes
-    ctx.strokeStyle = 'rgba(232,242,255,0.34)'; ctx.lineWidth = 3;
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2;
-      ctx.beginPath();
-      ctx.moveTo(Math.cos(a) * 10, Math.sin(a) * 10);
-      ctx.lineTo(Math.cos(a) * 25, Math.sin(a) * 25);
-      ctx.stroke();
-    }
-    // rivets
-    ctx.fillStyle = 'rgba(240,248,255,0.6)';
-    for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * Math.PI * 2;
-      ctx.beginPath(); ctx.arc(Math.cos(a) * 22, Math.sin(a) * 22, 1.6, 0, Math.PI * 2); ctx.fill();
-    }
-    // the dial hub
-    ctx.fillStyle = '#10182a';
-    ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = INK.brass; ctx.lineWidth = 2.6;
-    ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI * 2); ctx.stroke();
-    ctx.strokeStyle = INK.brass; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(6, -3); ctx.stroke();
-    // the plaque above the door
-    ctx.fillStyle = INK.brass;
-    ctx.font = `bold 9px ${FACE}`;
-    ctx.textAlign = 'center';
-    ctx.fillText('VAULT', 0, -40);
-    // warm light thrown into the room in front of it
-    ctx.globalCompositeOperation = 'lighter';
-    halo(ctx, 44, 0, 96, '255,206,140', 0.14);
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.restore();
-  }
-
-  // ---- vignette, so the eye settles on the room
-  const vig = ctx.createRadialGradient(VIEW_W / 2, VIEW_H / 2, VIEW_H * 0.42, VIEW_W / 2, VIEW_H / 2, VIEW_H * 0.95);
-  vig.addColorStop(0, 'rgba(0,0,0,0)');
-  vig.addColorStop(1, 'rgba(0,0,0,0.46)');
-  ctx.fillStyle = vig;
-  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-
-  return c;
-}
 
 // ---------------------------------------------------------------- light cones
 
-function cone(ctx, cx, cy, face, reach, half, inner, outer, dashed) {
+// A cone stops at the first wall or duct it meets, so the drawn beam is the
+// same beam detection.js tests: a torch through a wall would be a lie.
+function conePath(cx, cy, face, half, reach, floor) {
+  const steps = Math.max(16, Math.ceil((half * 2) / 0.028));
+  const pts = [];
+  for (let i = 0; i <= steps; i++) {
+    const a = face - half + (2 * half) * i / steps;
+    const dx = Math.cos(a), dy = Math.sin(a);
+    let hit = reach;
+    for (let s = 6; s <= reach; s += 5) {
+      const tx = Math.floor((cx + dx * s) / CELL);
+      const ty = Math.floor((cy + dy * s) / CELL);
+      if (tx < 0 || ty < 0 || tx >= floor.width || ty >= floor.height
+        || floor.walls[ty][tx] || floor.vents[ty][tx]) { hit = Math.max(0, s - 5); break; }
+    }
+    pts.push([cx + dx * hit, cy + dy * hit]);
+  }
+  return pts;
+}
+
+function cone(ctx, cx, cy, face, reach, half, inner, outer, dashed, floor, weight = 2) {
+  const pts = conePath(cx, cy, face, half, reach, floor);
   ctx.save();
-  const path = () => {
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, reach, face - half, face + half);
-    ctx.closePath();
-  };
-  path();
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  for (const [x, y] of pts) ctx.lineTo(x, y);
+  ctx.closePath();
   const g = ctx.createRadialGradient(cx, cy, 8, cx, cy, reach);
   g.addColorStop(0, `rgba(${inner},0.55)`);
   g.addColorStop(0.55, `rgba(${inner},0.26)`);
   g.addColorStop(1, `rgba(${inner},0.03)`);
   ctx.fillStyle = g;
   ctx.fill();
-  ctx.strokeStyle = `rgba(${outer},0.85)`;
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = `rgba(${outer},0.8)`;
+  ctx.lineWidth = weight;
   if (dashed) ctx.setLineDash([7, 6]);
   ctx.stroke();
   ctx.restore();
 }
 
-function lights(ctx, run) {
+// What a warden believes right now: nothing (calm), a noise or a fresh
+// sighting nearby (suspicious), or the burglar in his torch beam (alert).
+function guardMood(floor, run, w) {
+  if (run.phase === 'caught') return 'alert';
+  if (catches(floor, w.x, w.y, w.face, WARDEN.cone, WARDEN.half, run.burglar.x, run.burglar.y)) return 'alert';
+  if (run.alarm >= ALARM.hotAt) return 'alert';
+  if (w.nose > 0) return 'suspicious';
+  if (run.hunt && Math.hypot(w.x - run.hunt.at.x, w.y - run.hunt.at.y) < WARDEN.huntReach) return 'suspicious';
+  return 'calm';
+}
+
+function lights(ctx, run, floor) {
+  const b = run.burglar;
   for (const w of run.wardens) {
-    halo(ctx, w.x, w.y, 40, '255,120,90', 0.20);
-    cone(ctx, w.x, w.y, w.face, WARDEN.cone, WARDEN.half, '255,96,80', '255,150,120', false);
+    const mood = guardMood(floor, run, w);
+    halo(ctx, w.x, w.y, 44, mood === 'calm' ? '255,170,100' : mood === 'suspicious' ? '255,204,84' : '255,60,60', 0.24);
+    if (mood === 'alert') cone(ctx, w.x, w.y, w.face, WARDEN.cone, WARDEN.half, '255,58,58', '255,78,78', false, floor, 2.6);
+    else if (mood === 'suspicious') cone(ctx, w.x, w.y, w.face, WARDEN.cone, WARDEN.half, '255,204,84', '255,226,120', false, floor, 2.4);
+    else cone(ctx, w.x, w.y, w.face, WARDEN.cone, WARDEN.half, '255,178,104', '255,206,146', false, floor, 1.8);
+    if (mood === 'alert') {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,70,70,0.55)';
+      ctx.lineWidth = 1.6;
+      ctx.setLineDash([4, 6]);
+      ctx.beginPath(); ctx.moveTo(w.x, w.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      ctx.restore();
+    }
   }
   for (const c of run.cameras) {
     if (c.dark > 0) continue;
-    cone(ctx, c.x, c.y, c.face, EYE.cone, EYE.half, '255,196,80', '255,214,120', true);
+    const hot = !run.smoke && catches(floor, c.x, c.y, c.face, EYE.cone, EYE.half, b.x, b.y);
+    cone(ctx, c.x, c.y, c.face, EYE.cone, EYE.half,
+      hot ? '255,70,70' : '255,196,80', hot ? '255,90,90' : '255,214,120', !hot, floor, hot ? 2.4 : 2);
+    if (hot) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,90,90,0.6)';
+      ctx.lineWidth = 1.5; ctx.setLineDash([3, 5]);
+      ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
+// ---------------------------------------------------------------- the cast
+
+function guard(ctx, w, mood) {
+  const tint = mood === 'alert' ? '#ff5048' : mood === 'suspicious' ? '#ffb648' : INK.warden;
+  const scale = mood === 'calm' ? 1 : 1.08;
+  ctx.save();
+  ctx.translate(w.x, w.y);
+  ctx.scale(scale, scale);
+  ctx.rotate(w.face);
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.beginPath(); ctx.ellipse(0, 12, 15, 6, 0, 0, Math.PI * 2); ctx.fill();
+  // shoulders
+  ctx.fillStyle = tint;
+  rrect(ctx, -10, -10, 24, 21, 8); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1.4;
+  rrect(ctx, -10, -10, 24, 21, 8); ctx.stroke();
+  // hi-vis stripe
+  ctx.fillStyle = 'rgba(255,236,180,0.85)';
+  ctx.fillRect(-6, -9, 3, 19);
+  ctx.fillRect(0, -9, 3, 19);
+  // helmet
+  ctx.fillStyle = '#f2d9cf';
+  ctx.beginPath(); ctx.arc(4, -1, 7, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#2b3040';
+  ctx.beginPath(); ctx.arc(4, 4, 7, 0.15 * Math.PI, 0.85 * Math.PI); ctx.fill();
+  ctx.fillStyle = '#0b0f1a';
+  ctx.beginPath(); ctx.arc(7, -2, 1.5, 0, Math.PI * 2); ctx.fill();
+  // the torch
+  ctx.strokeStyle = '#20283a'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(8, 6); ctx.lineTo(15, 2); ctx.stroke();
+  ctx.fillStyle = '#ffe7ae';
+  ctx.beginPath(); ctx.arc(16, 1, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,231,174,0.35)';
+  ctx.beginPath(); ctx.arc(16, 1, 9, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  // the state bubble: ? = heard something, ! = has eyes on you
+  if (mood !== 'calm') {
+    const alert = mood === 'alert';
+    ctx.save();
+    ctx.translate(w.x, w.y - 34);
+    if (alert) halo(ctx, 0, 0, 26, '255,60,60', 0.45);
+    ctx.fillStyle = alert ? '#ff3d43' : '#ffc247';
+    ctx.beginPath(); ctx.arc(0, 0, 13, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(6,10,18,0.8)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, 13, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = alert ? '#fff' : '#101720';
+    ctx.font = `bold 19px ${FACE}`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(alert ? '!' : '?', 0, 1);
+    ctx.restore();
+  }
+}
+
+function camera(ctx, c, hot) {
+  ctx.save();
+  ctx.translate(c.x, c.y);
+  ctx.rotate(c.face);
+  // mount
+  ctx.strokeStyle = 'rgba(150,175,220,0.55)'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(-16, 0); ctx.lineTo(-8, 0); ctx.stroke();
+  // body
+  ctx.fillStyle = c.dark > 0 ? '#3d4352' : '#232c40';
+  rrect(ctx, -9, -7, 24, 14, 4); ctx.fill();
+  ctx.strokeStyle = hot ? '#ff5a5a' : c.dark > 0 ? '#707a8c' : INK.eye; ctx.lineWidth = hot ? 2.4 : 1.8;
+  rrect(ctx, -9, -7, 24, 14, 4); ctx.stroke();
+  // lens
+  ctx.fillStyle = '#070b14';
+  ctx.beginPath(); ctx.arc(12, 0, 5.2, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = `rgba(255,214,120,0.85)`; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.arc(12, 0, 5.2, 0, Math.PI * 2); ctx.stroke();
+  if (c.dark > 0) {
+    ctx.strokeStyle = '#94a0b4'; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.moveTo(-14, -8); ctx.lineTo(8, 8); ctx.stroke();
+  } else {
+    ctx.fillStyle = hot ? '#ff4d4d' : INK.alarm;
+    ctx.beginPath(); ctx.arc(-4, -5, 2, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function burglar(ctx, run) {
+  const b = run.burglar;
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  halo(ctx, 0, 0, 44, '92,232,192', 0.34);
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.beginPath(); ctx.ellipse(0, 12, 14, 5.5, 0, 0, Math.PI * 2); ctx.fill();
+  // hooded coat
+  ctx.beginPath();
+  ctx.moveTo(0, -17);
+  ctx.quadraticCurveTo(14, -11, 11, 9);
+  ctx.quadraticCurveTo(0, 17, -11, 9);
+  ctx.quadraticCurveTo(-14, -11, 0, -17);
+  ctx.closePath();
+  ctx.fillStyle = INK.burglar;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(240,255,250,0.9)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // the kit bag over the shoulder
+  ctx.fillStyle = '#17342c';
+  ctx.beginPath(); ctx.arc(8, 4, 5, 0, Math.PI * 2); ctx.fill();
+  // mask
+  ctx.fillStyle = '#08111f';
+  rrect(ctx, -6, -13, 12, 8, 3); ctx.fill();
+  ctx.fillStyle = 'rgba(150,255,225,0.95)';
+  ctx.fillRect(-4, -10, 2.6, 2);
+  ctx.fillRect(1.4, -10, 2.6, 2);
+  ctx.restore();
+
+  // the bag: every piece on him shows as a small cut stone riding with him
+  if (run.pieces > 0) {
+    const n = Math.min(3, run.pieces);
+    for (let i = 0; i < n; i++) {
+      const a = run.t * 1.4 + i * 2.1;
+      const px = b.x + Math.cos(a) * 15;
+      const py = b.y - 24 + Math.sin(a) * 3;
+      ctx.fillStyle = 'rgba(255,224,150,0.85)';
+      ctx.beginPath();
+      ctx.moveTo(px, py - 4);
+      ctx.lineTo(px + 4, py);
+      ctx.lineTo(px, py + 4);
+      ctx.lineTo(px - 4, py);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  // a dash is loud: three rings of sound leaving the burglar
+  if (b.dashing && !run.kit.slippers) {
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    for (let i = 0; i < 3; i++) {
+      const ring = (run.t * 1.25 + i / 3) % 1;
+      ctx.strokeStyle = `rgba(255,150,110,${0.5 * (1 - ring)})`;
+      ctx.lineWidth = 2.4 - ring * 1.4;
+      ctx.beginPath(); ctx.arc(0, 0, 26 + ring * 150, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(255,170,120,0.9)';
+    ctx.font = `bold 13px ${FACE}`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('NOISE', 0, -34);
+    ctx.restore();
+  }
+
+  if (run.smoke) {
+    ctx.save();
+    const k = Math.min(1, run.smoke.life);
+    halo(ctx, run.smoke.x, run.smoke.y, 96, '210,225,245', 0.30 * k);
+    ctx.restore();
   }
 }
 
@@ -319,7 +284,7 @@ function drawLoot(ctx, run) {
     halo(ctx, 0, 0, 56, '243,198,107', 0.16 * pulse);
 
     if (item.kind === 'vault') {
-      // the safe: a squat steel box with a dial, half drilled
+      // the safe: a squat steel box with a dial, and a ring that fills as it drills
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.beginPath(); ctx.ellipse(0, 21, 26, 7, 0, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#24344c';
@@ -332,11 +297,11 @@ function drawLoot(ctx, run) {
       ctx.beginPath(); ctx.arc(0, -1, 10.5, 0, Math.PI * 2); ctx.stroke();
       ctx.fillStyle = INK.brass;
       ctx.beginPath(); ctx.arc(0, -1, 3, 0, Math.PI * 2); ctx.fill();
-      if (item.worked > 0) {
-        const need = run.kit.crowbar ? 1.1 : 3.4;
-        ctx.strokeStyle = '#8df7c9'; ctx.lineWidth = 3.8; ctx.lineCap = 'round';
+      const share = drillShare(item, run.kit);
+      if (share > 0) {
+        ctx.strokeStyle = '#8df7c9'; ctx.lineWidth = 4.2; ctx.lineCap = 'round';
         ctx.beginPath();
-        ctx.arc(0, -1, 30, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, item.worked / need));
+        ctx.arc(0, -1, 30, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * share);
         ctx.stroke();
         // drill sparks
         for (let i = 0; i < 9; i++) {
@@ -347,6 +312,10 @@ function drawLoot(ctx, run) {
           ctx.arc(Math.cos(t) * r, -1 + Math.sin(t * 1.3) * r, 1.9, 0, Math.PI * 2);
           ctx.fill();
         }
+        ctx.fillStyle = '#bfffee';
+        ctx.font = `bold 13px ${FACE}`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(`DRILL ${Math.round(share * 100)}%`, 0, -44);
       }
     } else if (item.kind === 'gem') {
       // a pedestal and a lit stone
@@ -380,244 +349,246 @@ function drawLoot(ctx, run) {
   }
 }
 
-// ---------------------------------------------------------------- cast
+// ---------------------------------------------------------------- the vault door
+// The door is a wall until the safe empties; after that it is an open doorway
+// with warm light coming out. Painted every frame so the change reads.
 
-function guard(ctx, w) {
+function vaultDoor(ctx, floor) {
+  const d = floor.door;
+  if (!d) return;
+  const open = !floor.walls[d.ty][d.tx];
   ctx.save();
-  ctx.translate(w.x, w.y);
-  ctx.rotate(w.face);
-  ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  ctx.beginPath(); ctx.ellipse(0, 11, 15, 6, 0, 0, Math.PI * 2); ctx.fill();
-  // shoulders
-  ctx.fillStyle = INK.warden;
-  rrect(ctx, -10, -10, 24, 21, 8); ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1.4;
-  rrect(ctx, -10, -10, 24, 21, 8); ctx.stroke();
-  // hi-vis stripe
-  ctx.fillStyle = 'rgba(255,236,180,0.85)';
-  ctx.fillRect(-6, -9, 3, 19);
-  ctx.fillRect(0, -9, 3, 19);
-  // helmet
-  ctx.fillStyle = '#f2d9cf';
-  ctx.beginPath(); ctx.arc(4, -1, 7, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#2b3040';
-  ctx.beginPath(); ctx.arc(4, 4, 7, 0.15 * Math.PI, 0.85 * Math.PI); ctx.fill();
-  ctx.fillStyle = '#0b0f1a';
-  ctx.beginPath(); ctx.arc(7, -2, 1.5, 0, Math.PI * 2); ctx.fill();
-  // the torch
-  ctx.strokeStyle = '#20283a'; ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.moveTo(8, 6); ctx.lineTo(15, 2); ctx.stroke();
-  ctx.fillStyle = '#ffe7ae';
-  ctx.beginPath(); ctx.arc(16, 1, 4, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = 'rgba(255,231,174,0.35)';
-  ctx.beginPath(); ctx.arc(16, 1, 9, 0, Math.PI * 2); ctx.fill();
-  ctx.restore();
-
-  if (w.nose > 0) {
-    ctx.fillStyle = INK.alarm;
-    ctx.font = `bold 20px ${FACE}`;
-    ctx.textAlign = 'center';
-    ctx.fillText('!', w.x, w.y - 26);
-  }
-}
-
-function camera(ctx, c) {
-  ctx.save();
-  ctx.translate(c.x, c.y);
-  ctx.rotate(c.face);
-  // mount
-  ctx.strokeStyle = 'rgba(150,175,220,0.55)'; ctx.lineWidth = 2.5;
-  ctx.beginPath(); ctx.moveTo(-16, 0); ctx.lineTo(-8, 0); ctx.stroke();
-  // body
-  ctx.fillStyle = c.dark > 0 ? '#3d4352' : '#232c40';
-  rrect(ctx, -9, -7, 24, 14, 4); ctx.fill();
-  ctx.strokeStyle = c.dark > 0 ? '#707a8c' : INK.eye; ctx.lineWidth = 1.8;
-  rrect(ctx, -9, -7, 24, 14, 4); ctx.stroke();
-  // lens
-  ctx.fillStyle = '#070b14';
-  ctx.beginPath(); ctx.arc(12, 0, 5.2, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(255,214,120,0.85)'; ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.arc(12, 0, 5.2, 0, Math.PI * 2); ctx.stroke();
-  if (c.dark > 0) {
-    ctx.strokeStyle = '#94a0b4'; ctx.lineWidth = 1.8;
-    ctx.beginPath(); ctx.moveTo(-14, -8); ctx.lineTo(8, 8); ctx.stroke();
-  } else {
-    ctx.fillStyle = INK.alarm;
-    ctx.beginPath(); ctx.arc(-4, -5, 2, 0, Math.PI * 2); ctx.fill();
-  }
-  ctx.restore();
-}
-
-function burglar(ctx, run) {
-  const b = run.burglar;
-  ctx.save();
-  ctx.translate(b.x, b.y);
-  halo(ctx, 0, 0, 40, '92,232,192', 0.30);
-  ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  ctx.beginPath(); ctx.ellipse(0, 12, 14, 5.5, 0, 0, Math.PI * 2); ctx.fill();
-  // hooded coat
-  ctx.beginPath();
-  ctx.moveTo(0, -17);
-  ctx.quadraticCurveTo(14, -11, 11, 9);
-  ctx.quadraticCurveTo(0, 17, -11, 9);
-  ctx.quadraticCurveTo(-14, -11, 0, -17);
-  ctx.closePath();
-  ctx.fillStyle = INK.burglar;
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(240,255,250,0.9)';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  // the kit bag over the shoulder
-  ctx.fillStyle = '#17342c';
-  ctx.beginPath(); ctx.arc(8, 4, 5, 0, Math.PI * 2); ctx.fill();
-  // mask
-  ctx.fillStyle = '#08111f';
-  rrect(ctx, -6, -13, 12, 8, 3); ctx.fill();
-  ctx.fillStyle = 'rgba(150,255,225,0.95)';
-  ctx.fillRect(-4, -10, 2.6, 2);
-  ctx.fillRect(1.4, -10, 2.6, 2);
-  ctx.restore();
-
-  // the bag: every piece on him shows as a small cut stone riding with him
-  if (run.pieces > 0) {
-    const n = Math.min(3, run.pieces);
-    for (let i = 0; i < n; i++) {
-      const a = run.t * 1.4 + i * 2.1;
-      const px = Math.cos(a) * 15;
-      const py = -24 + Math.sin(a) * 3;
-      ctx.fillStyle = 'rgba(255,224,150,0.85)';
+  ctx.translate(d.x, d.y);
+  if (!open) {
+    halo(ctx, 0, 0, 78, '243,198,107', 0.20);
+    ctx.fillStyle = '#0c1320';
+    ctx.beginPath(); ctx.arc(0, 0, 34, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#1b2740'; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.arc(0, 0, 34, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#3c4d63';
+    ctx.beginPath(); ctx.arc(0, 0, 27, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = INK.brass; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0, 0, 27, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = 'rgba(232,242,255,0.34)'; ctx.lineWidth = 3;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
       ctx.beginPath();
-      ctx.moveTo(px, py - 4);
-      ctx.lineTo(px + 4, py);
-      ctx.lineTo(px, py + 4);
-      ctx.lineTo(px - 4, py);
-      ctx.closePath();
-      ctx.fill();
+      ctx.moveTo(Math.cos(a) * 10, Math.sin(a) * 10);
+      ctx.lineTo(Math.cos(a) * 25, Math.sin(a) * 25);
+      ctx.stroke();
     }
+    ctx.fillStyle = 'rgba(240,248,255,0.6)';
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      ctx.beginPath(); ctx.arc(Math.cos(a) * 22, Math.sin(a) * 22, 1.6, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = '#10182a';
+    ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = INK.brass; ctx.lineWidth = 2.6;
+    ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = INK.brass; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(6, -3); ctx.stroke();
+    ctx.fillStyle = INK.brass;
+    ctx.font = `bold 10px ${FACE}`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('VAULT', 0, -40);
+    ctx.globalCompositeOperation = 'lighter';
+    halo(ctx, 44, 0, 96, '255,206,140', 0.14);
+  } else {
+    // the frame and the black of the room beyond
+    ctx.fillStyle = '#05070d';
+    rrect(ctx, -17, -20, 34, 40, 4); ctx.fill();
+    ctx.strokeStyle = INK.brass; ctx.lineWidth = 2.6;
+    rrect(ctx, -17, -20, 34, 40, 4); ctx.stroke();
+    ctx.globalCompositeOperation = 'lighter';
+    halo(ctx, 0, 0, 96, '255,206,140', 0.26);
+    ctx.globalCompositeOperation = 'source-over';
+    // the leaf, swung back against the wall
+    ctx.fillStyle = '#3c4d63';
+    rrect(ctx, -42, -20, 11, 40, 3); ctx.fill();
+    ctx.strokeStyle = INK.brass; ctx.lineWidth = 2;
+    rrect(ctx, -42, -20, 11, 40, 3); ctx.stroke();
+    ctx.fillStyle = INK.stairs;
+    ctx.font = `bold 10px ${FACE}`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('OPEN', 0, 26);
   }
-
-  if (b.dashing && !run.kit.slippers) {
-    const ring = (run.t * 1.7) % 1;
-    ctx.save();
-    ctx.translate(b.x, b.y);
-    ctx.strokeStyle = `rgba(255,140,110,${0.55 * (1 - ring)})`;
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(0, 0, 28 + ring * 150, 0, Math.PI * 2); ctx.stroke();
-    ctx.restore();
-  }
-
-  if (run.smoke) {
-    ctx.save();
-    const k = Math.min(1, run.smoke.life);
-    halo(ctx, run.smoke.x, run.smoke.y, 92, '210,225,245', 0.28 * k);
-    ctx.restore();
-  }
+  ctx.restore();
 }
 
 // ---------------------------------------------------------------- HUD
 
 function hud(ctx, run, floor) {
-  // top strip
-  const top = ctx.createLinearGradient(0, 0, 0, 62);
-  top.addColorStop(0, 'rgba(6,9,17,0.96)');
-  top.addColorStop(1, 'rgba(6,9,17,0.72)');
+  const mood = moodOf(run.alarm);
+  const color = STATE_COLOR[mood];
+  const pct = Math.round(Math.min(1, run.alarm / ALARM.trip) * 100);
+
+  // ---- top strip
+  const top = ctx.createLinearGradient(0, 0, 0, TOP_H);
+  top.addColorStop(0, 'rgba(6,9,17,0.97)');
+  top.addColorStop(1, 'rgba(6,9,17,0.82)');
   ctx.fillStyle = top;
-  ctx.fillRect(0, 0, VIEW_W, 62);
-  ctx.fillStyle = 'rgba(130,155,215,0.28)';
-  ctx.fillRect(0, 61, VIEW_W, 1);
+  ctx.fillRect(0, 0, VIEW_W, TOP_H);
+  ctx.fillStyle = 'rgba(130,155,215,0.30)';
+  ctx.fillRect(0, TOP_H - 1, VIEW_W, 1);
 
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = INK.brass;
-  ctx.font = `bold 24px ${FACE}`;
-  ctx.fillText(`$${run.haul}`, 22, 24);
+  ctx.font = `bold 34px ${FACE}`;
+  ctx.fillText(`$${run.haul}`, 24, 34);
   ctx.fillStyle = INK.textDim;
-  ctx.font = `11px ${FACE}`;
-  ctx.fillText(`${run.pieces} PIECES 路 ${floor.name.toUpperCase()}`, 22, 46);
+  ctx.font = `bold 14px ${FACE}`;
+  ctx.fillText(`${run.pieces} PIECES  /  FLOOR ${run.floorNo + 1} OF 3`, 24, 64);
 
-  // alarm meter
-  const w = 470, h = 26, x = (VIEW_W - w) / 2, y = 16;
-  const lvl = Math.min(1, run.alarm / ALARM.trip);
+  // ---- alarm: state word, percentage, meter with its three thresholds
+  const ax = 430, aw = 420;
+  ctx.fillStyle = color;
+  rrect(ctx, ax, 10, 172, 30, 6); ctx.fill();
+  const onBright = mood === 'calm' || mood === 'suspicious';
+  ctx.fillStyle = onBright ? '#08131f' : '#fff';
+  ctx.font = `bold 18px ${FACE}`;
+  ctx.textAlign = 'center';
+  ctx.fillText(STATE_WORD[mood], ax + 86, 26);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = color;
+  ctx.font = `bold 22px ${FACE}`;
+  ctx.fillText(`${pct}%`, ax + aw, 26);
+
+  const my = 48, mh = 18;
   ctx.fillStyle = 'rgba(18,24,40,0.95)';
-  rrect(ctx, x, y, w, h, 5); ctx.fill();
-  const hot = lvl > ALARM.hotAt;
-  const fill = ctx.createLinearGradient(x, 0, x + w, 0);
+  rrect(ctx, ax, my, aw, mh, 4); ctx.fill();
   ctx.save();
-  rrect(ctx, x, y, w, h, 5); ctx.clip();
-  fill.addColorStop(0, hot ? '#ff4d57' : '#e8a93c');
-  fill.addColorStop(1, hot ? '#ff8a6a' : '#f5c863');
+  rrect(ctx, ax, my, aw, mh, 4); ctx.clip();
+  const fill = ctx.createLinearGradient(ax, 0, ax + aw, 0);
+  fill.addColorStop(0, mood === 'calm' ? '#2f9f6e' : color);
+  fill.addColorStop(1, mood === 'lockdown' ? '#ff6a6a' : color);
   ctx.fillStyle = fill;
-  ctx.fillRect(x, y, Math.max(4, w * lvl), h);
+  ctx.fillRect(ax, my, Math.max(5, aw * run.alarm / ALARM.trip), mh);
   for (let i = 1; i < 12; i++) {
-    ctx.fillStyle = 'rgba(6,9,16,0.55)';
-    ctx.fillRect(x + (w / 12) * i, y + 3, 1.6, h - 6);
+    ctx.fillStyle = 'rgba(6,9,16,0.42)';
+    ctx.fillRect(ax + (aw / 12) * i, my + 3, 1.4, mh - 6);
   }
   ctx.restore();
-  ctx.strokeStyle = `rgba(230,240,255,${hot ? 0.55 : 0.28})`;
-  ctx.lineWidth = 1.2;
-  rrect(ctx, x, y, w, h, 5); ctx.stroke();
-  ctx.fillStyle = 'rgba(255,255,255,0.92)';
-  ctx.font = `bold 12px ${FACE}`;
-  ctx.textAlign = 'left';
-  ctx.fillText('ALARM', x + 12, y + h / 2 + 1);
-  if (hot) {
-    ctx.fillStyle = '#fff';
-    ctx.textAlign = 'right';
-    ctx.fillText('SPOTTED', x + w - 12, y + h / 2 + 1);
+  for (const t of [ALARM.waryAt, ALARM.hotAt, ALARM.lockAt]) {
+    const tx = ax + aw * t;
+    ctx.fillStyle = 'rgba(6,9,16,0.85)';
+    ctx.fillRect(tx - 1, my - 3, 2.4, mh + 6);
   }
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.font = `bold 11px ${FACE}`;
+  ctx.textAlign = 'left';
+  ctx.fillText('ALARM', ax + 9, my + mh / 2 + 1);
+  ctx.strokeStyle = `rgba(230,240,255,${mood === 'calm' ? 0.22 : 0.5})`;
+  ctx.lineWidth = 1.2;
+  rrect(ctx, ax, my, aw, mh, 4); ctx.stroke();
 
-  // getaway clock
+  // ---- the sentence that tells the player what to do next
+  let hint, hintColor;
+  if (run.seen) { hint = 'SPOTTED - break the line of sight'; hintColor = STATE_COLOR.alert; }
+  else if (run.hunt) { hint = 'HUNTED - they are closing on your last sight'; hintColor = STATE_COLOR.alert; }
+  else if (mood === 'lockdown') { hint = 'LOCKDOWN - every warden is converging'; hintColor = STATE_COLOR.lockdown; }
+  else if (mood === 'alert') { hint = 'ALERT - the house is hunting you'; hintColor = STATE_COLOR.alert; }
+  else if (mood === 'suspicious') { hint = 'SUSPECT - stay out of the cones to cool off'; hintColor = STATE_COLOR.suspicious; }
+  else { hint = 'CALM - nothing has seen you'; hintColor = INK.textDim; }
+  ctx.textAlign = 'left';
+  ctx.fillStyle = hintColor;
+  ctx.font = `bold 13px ${FACE}`;
+  ctx.fillText(hint, ax, 79);
+
+  // ---- countdown
   ctx.textAlign = 'right';
   if (run.clockOn) {
     const low = run.clock < 20;
     ctx.fillStyle = low ? INK.alarm : INK.text;
-    ctx.font = `bold 24px ${FACE}`;
-    ctx.fillText(`GETAWAY ${run.clock.toFixed(1)}s`, VIEW_W - 22, 22);
-    ctx.fillStyle = INK.textDim;
-    ctx.font = `11px ${FACE}`;
-    ctx.fillText('reach the stairs before it dies', VIEW_W - 22, 45);
+    ctx.font = `bold 36px ${FACE}`;
+    ctx.fillText(mmss(run.clock), VIEW_W - 24, 32);
+    ctx.fillStyle = low ? STATE_COLOR.alert : INK.textDim;
+    ctx.font = `bold 13px ${FACE}`;
+    ctx.fillText(low ? 'GETAWAY - MOVE' : 'GETAWAY CLOCK', VIEW_W - 24, 61);
   } else {
+    ctx.fillStyle = INK.text;
+    ctx.font = `bold 30px ${FACE}`;
+    ctx.fillText('ARMED', VIEW_W - 24, 32);
     ctx.fillStyle = INK.textDim;
-    ctx.font = `bold 20px ${FACE}`;
-    ctx.fillText('CLOCK ARMING', VIEW_W - 22, 24);
-    ctx.fillStyle = 'rgba(230,236,248,0.5)';
-    ctx.font = `11px ${FACE}`;
-    ctx.fillText('first piece starts it', VIEW_W - 22, 45);
+    ctx.font = `bold 13px ${FACE}`;
+    ctx.fillText('FIRST PIECE STARTS IT', VIEW_W - 24, 61);
   }
+  ctx.fillStyle = 'rgba(230,236,248,0.45)';
+  ctx.font = `11px ${FACE}`;
+  ctx.fillText('reach the stairs before it dies', VIEW_W - 24, 79);
 
-  // gear tray
-  ctx.fillStyle = 'rgba(6,9,17,0.92)';
-  ctx.fillRect(0, TRAY_Y, VIEW_W, 64);
-  ctx.fillStyle = 'rgba(130,155,215,0.28)';
+  // ---- gear tray
+  ctx.fillStyle = 'rgba(6,9,17,0.94)';
+  ctx.fillRect(0, TRAY_Y, VIEW_W, 76);
+  ctx.fillStyle = 'rgba(130,155,215,0.30)';
   ctx.fillRect(0, TRAY_Y, VIEW_W, 1);
 
   ctx.textAlign = 'left';
-  ctx.fillStyle = INK.textDim;
-  ctx.font = `11px ${FACE}`;
-  ctx.fillText(`PURSE $${run.purse}`, 22, TRAY_Y + 20);
+  ctx.fillStyle = INK.brass;
+  ctx.font = `bold 17px ${FACE}`;
+  ctx.fillText(`PURSE $${run.purse}`, 24, TRAY_Y + 23);
   ctx.fillStyle = run.floorPieces > 0 ? INK.stairs : INK.textDim;
-  ctx.font = `bold 11px ${FACE}`;
-  ctx.fillText(run.floorPieces > 0 ? 'STAIRS OPEN' : 'STAIRS LOCKED 鈥?lift something', 22, TRAY_Y + 43);
+  ctx.font = `bold 12px ${FACE}`;
+  ctx.fillText(run.floorPieces > 0 ? 'STAIRS OPEN' : 'STAIRS LOCKED', 24, TRAY_Y + 45);
+  ctx.fillStyle = 'rgba(230,236,248,0.5)';
+  ctx.font = `11px ${FACE}`;
+  ctx.fillText(run.floorPieces > 0 ? 'the green door is lit' : 'lift a piece to open them', 24, TRAY_Y + 62);
 
+  const owned = KIT.filter(t => run.kit[t.key]).length;
   KIT.forEach((tool, i) => {
-    const bx = 258 + i * 218;
+    const bx = 214 + i * 207;
     const had = !!run.kit[tool.key];
     const can = run.purse >= tool.cost && !had;
     ctx.fillStyle = had ? 'rgba(92,232,192,0.16)' : can ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.025)';
-    rrect(ctx, bx, TRAY_Y + 9, 204, 46, 6); ctx.fill();
+    rrect(ctx, bx, TRAY_Y + 9, 198, 58, 6); ctx.fill();
     ctx.strokeStyle = had ? INK.burglar : can ? 'rgba(210,222,245,0.42)' : 'rgba(130,140,160,0.22)';
     ctx.lineWidth = 1.4;
-    rrect(ctx, bx, TRAY_Y + 9, 204, 46, 6); ctx.stroke();
+    rrect(ctx, bx, TRAY_Y + 9, 198, 58, 6); ctx.stroke();
     ctx.fillStyle = had ? INK.burglar : can ? INK.text : '#5d6678';
-    ctx.font = `bold 13px ${FACE}`;
-    ctx.fillText(`[${i + 1}] ${tool.tag}`, bx + 11, TRAY_Y + 26);
-    ctx.fillStyle = INK.textDim;
-    ctx.font = `10px ${FACE}`;
-    ctx.fillText(had ? 'IN THE BAG' : `$${tool.cost} 路 ${tool.blurb}`, bx + 11, TRAY_Y + 43);
+    ctx.font = `bold 15px ${FACE}`;
+    ctx.fillText(`[${i + 1}] ${tool.tag.toUpperCase()}`, bx + 10, TRAY_Y + 29);
+    ctx.fillStyle = had ? '#9ff7dc' : can ? 'rgba(214,226,248,0.82)' : 'rgba(130,140,160,0.62)';
+    ctx.font = `11px ${FACE}`;
+    ctx.fillText(had ? 'IN THE BAG' : `$${tool.cost}  ${tool.blurb}`, bx + 10, TRAY_Y + 50);
   });
 
-  if (hot) {
-    const beat = 0.14 + 0.10 * Math.sin(run.t * 9);
-    const edge = ctx.createRadialGradient(VIEW_W / 2, VIEW_H / 2, VIEW_H * 0.42, VIEW_W / 2, VIEW_H / 2, VIEW_H);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = INK.brass;
+  ctx.font = `bold 18px ${FACE}`;
+  ctx.fillText(`BAG $${run.haul}`, VIEW_W - 24, TRAY_Y + 25);
+  ctx.fillStyle = INK.textDim;
+  ctx.font = `bold 12px ${FACE}`;
+  ctx.fillText(`TOOLS ${owned}/4`, VIEW_W - 24, TRAY_Y + 46);
+  ctx.fillStyle = 'rgba(230,236,248,0.45)';
+  ctx.font = `11px ${FACE}`;
+  ctx.fillText('three floors / one night', VIEW_W - 24, TRAY_Y + 63);
+
+  // ---- the alarm speaks once, big, over the floor
+  const loud = run.seen || run.hunt || mood === 'alert' || mood === 'lockdown';
+  if (loud) {
+    const text = mood === 'lockdown' ? 'LOCKDOWN - EVERY WARDEN IS COMING'
+      : run.seen ? 'SPOTTED - BREAK THE LINE OF SIGHT'
+        : 'HUNTED - MOVE, NOW';
+    const pulse = 0.72 + 0.28 * Math.sin(run.t * 8);
+    ctx.font = `bold 20px ${FACE}`;
+    const w = ctx.measureText(text).width + 40;
+    const bx = (VIEW_W - w) / 2, by = TRAY_Y - 52;
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = 'rgba(10,12,20,0.9)';
+    rrect(ctx, bx, by, w, 36, 7); ctx.fill();
+    ctx.strokeStyle = color; ctx.lineWidth = 2;
+    rrect(ctx, bx, by, w, 36, 7); ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(text, VIEW_W / 2, by + 19);
+    ctx.restore();
+  }
+
+  // ---- red edge when the house is awake
+  if (run.alarm >= ALARM.hotAt || run.seen) {
+    const beat = (mood === 'lockdown' ? 0.18 : 0.10) + 0.07 * Math.sin(run.t * 9);
+    const edge = ctx.createRadialGradient(VIEW_W / 2, VIEW_H / 2, VIEW_H * 0.40, VIEW_W / 2, VIEW_H / 2, VIEW_H);
     edge.addColorStop(0, 'rgba(255,40,50,0)');
     edge.addColorStop(1, `rgba(255,40,50,${beat})`);
     ctx.fillStyle = edge;
@@ -635,7 +606,6 @@ function titles(ctx) {
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 
-  // a vault door looming behind the title
   ctx.save();
   ctx.translate(VIEW_W / 2, VIEW_H / 2 + 40);
   ctx.globalAlpha = 0.30;
@@ -660,20 +630,20 @@ function titles(ctx) {
   ctx.fillText('VAULT RUNNER', VIEW_W / 2, 208);
   ctx.fillStyle = INK.burglar;
   ctx.font = `bold 15px ${FACE}`;
-  ctx.fillText('THREE FLOORS 路 ONE NIGHT 路 NO SECOND CHANCES', VIEW_W / 2, 256);
+  ctx.fillText('THREE FLOORS  /  ONE NIGHT  /  FOUR ALARM STATES', VIEW_W / 2, 256);
   ctx.fillStyle = INK.text;
   ctx.font = `17px ${FACE}`;
   ctx.fillText('Slip past the wardens and their torches, lift what the museum has on show,', VIEW_W / 2, 312);
   ctx.fillText('crack the vault on the last floor, and be on the stairs before the clock dies.', VIEW_W / 2, 340);
   ctx.fillStyle = INK.textDim;
   ctx.font = `14px ${FACE}`;
-  ctx.fillText('WASD / arrows to move 路 SHIFT to dash (loud) 路 1-4 buy gear 路 ducts hide you and slow you', VIEW_W / 2, 398);
+  ctx.fillText('WASD / arrows move  /  SHIFT dash (loud)  /  1-4 buy gear  /  ducts hide you, slow you', VIEW_W / 2, 398);
   ctx.fillStyle = INK.stairs;
   ctx.font = `bold 18px ${FACE}`;
   ctx.fillText('PRESS ENTER', VIEW_W / 2, 458);
   ctx.fillStyle = 'rgba(143,154,180,0.75)';
   ctx.font = `12px ${FACE}`;
-  ctx.fillText(`purse $${PURSE} 路 a full bag is ${VALUE.case}+${VALUE.gem}+${VALUE.vault}`, VIEW_W / 2, 492);
+  ctx.fillText(`purse $${PURSE}  /  the night is worth $${2230}`, VIEW_W / 2, 492);
 }
 
 function caught(ctx, run) {
@@ -686,40 +656,48 @@ function caught(ctx, run) {
   ctx.fillText('TAKEN', VIEW_W / 2, VIEW_H / 2 - 16);
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
   ctx.font = `16px ${FACE}`;
-  ctx.fillText('dragged back to the service door 路 18s off the clock', VIEW_W / 2, VIEW_H / 2 + 26);
+  ctx.fillText('dragged back to the service door  /  18s off the clock', VIEW_W / 2, VIEW_H / 2 + 26);
 }
 
+// Cleared: a banner over the room, not a black card, so the stairs, the clock
+// and the haul stay in the same frame as the word OUT CLEAN.
 function cleared(ctx, run) {
-  ctx.fillStyle = 'rgba(5,8,16,0.88)';
+  ctx.fillStyle = 'rgba(5,8,16,0.52)';
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = INK.stairs;
-  ctx.font = `bold 48px ${FACE}`;
-  ctx.fillText('OUT CLEAN', VIEW_W / 2, 232);
+  ctx.font = `bold 58px ${FACE}`;
+  ctx.fillText('OUT CLEAN', VIEW_W / 2, 196);
   ctx.fillStyle = INK.brass;
-  ctx.font = `bold 64px ${FACE}`;
-  ctx.fillText(`$${run.haul}`, VIEW_W / 2, 322);
+  ctx.font = `bold 72px ${FACE}`;
+  ctx.fillText(`$${run.haul}`, VIEW_W / 2, 288);
   ctx.fillStyle = INK.text;
   ctx.font = `17px ${FACE}`;
-  ctx.fillText(`${run.pieces} pieces 路 purse left $${run.purse} 路 alarm survived`, VIEW_W / 2, 382);
+  ctx.fillText(`${run.pieces} PIECES  /  PURSE LEFT $${run.purse}  /  ALARM SURVIVED`, VIEW_W / 2, 352);
   ctx.fillStyle = INK.textDim;
   ctx.font = `15px ${FACE}`;
-  ctx.fillText('R runs the night again', VIEW_W / 2, 436);
+  ctx.fillText('R runs the night again', VIEW_W / 2, 392);
 }
 
 // ---------------------------------------------------------------- frame
 
 export function paint(ctx, run, floor, still) {
   const view = run.view || { s: 1, x: VIEW_W / 2, y: VIEW_H / 2 };
+  const b = run.burglar;
   ctx.save();
   ctx.translate(VIEW_W / 2, VIEW_H / 2);
   ctx.scale(view.s, view.s);
   ctx.translate(-view.x, -view.y);
   ctx.drawImage(still, 0, 0);
-  lights(ctx, run);
+  vaultDoor(ctx, floor);
+  lights(ctx, run, floor);
   drawLoot(ctx, run);
-  for (const w of run.wardens) guard(ctx, w);
-  for (const c of run.cameras) camera(ctx, c);
+  for (const w of run.wardens) guard(ctx, w, guardMood(floor, run, w));
+  for (const c of run.cameras) {
+    const hot = c.dark <= 0 && !run.smoke
+      && catches(floor, c.x, c.y, c.face, EYE.cone, EYE.half, b.x, b.y);
+    camera(ctx, c, hot);
+  }
   burglar(ctx, run);
   ctx.restore();
   hud(ctx, run, floor);

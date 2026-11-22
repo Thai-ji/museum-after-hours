@@ -18,11 +18,13 @@ You are the burglar. Three floors, two torches each, a lens on every landing, an
 
 Gear comes out of one purse for the whole night ($120): **1** crowbar (safe drills 3× faster, $40) · **2** flashbulb (every camera blind for 8s, $55) · **3** smoke (break all sight for 5s, $50) · **4** slippers (a dash makes no sound, $45).
 
+The alarm has four readable states: **CALM** (nothing has seen you), **SUSPECT** (a torch or lens had a nibble; the meter cools if you break sight), **ALERT** (past the hot line: the eyes stop sweeping and hunt your last sighting) and **LOCKDOWN** (past the lock line: every warden converges and the edge of the screen goes red). Wardens show their own state over their heads: **?** for a noise they heard, **!** for eyes on you.
+
 Controls: WASD / arrows to move, SHIFT to dash, 1-4 to buy gear, ENTER to start, R to run the night again.
 
 ## Screenshots
 
-Staged frames from the real game state — see `screenshots/1-cover.jpg` (the cover), `2-vault.jpg`, `3-caught.jpg` and `4-title.jpg`.
+Four beats of one night, every frame rendered by the real game at 1280×720: `screenshots/1-cover.jpg` (the whole vault court: thief, three wardens and their torches, two lenses, the steel door and the safe, and the HUD), `2-drill.jpg` (the safe half drilled, the ring climbing, a warden turning with a ?), `3-lockdown.jpg` (the meter past the lock line, three torches closing, the dash rings loud), `4-escape.jpg` (vault open, bag full, stairs lit, OUT CLEAN).
 
 ## Run it
 
@@ -41,7 +43,15 @@ game/style.css     black frame around the canvas
 game/src/tuning.js every number the heist runs on
 game/src/layout.js the three floor plans, text grids, and the loader
 game/src/rules.js  the heist's laws: movement, sight, alarm, clock, loot
-game/src/view.js   backdrop painter, cones, the cast, HUD, title/caught/cleared screens
+game/src/detection.js  walls, open lines, cones, the tally of eyes
+game/src/patrol.js     the wardens' beats, heard noises, the fixed stare
+game/src/alarm.js      the meter's four states and the last-sighting pin
+game/src/gear.js       the purse and the four tools it buys
+game/src/vault.js      lifting loot, drilling the safe, the door
+game/src/getaway.js    the clock and the stairs
+game/src/art.js        canvas helpers (boxes, stable noise, halos)
+game/src/props.js      the painted museum backdrop, patrol beats included
+game/src/view.js       cones, the cast and their states, the vault door, the HUD, screens
 game/src/keys.js   keyboard → one intent object per step
 game/src/boot.js   the fixed-step loop and the ?shot= staging
 tools/             tests and the screenshot rig (not shipped in game/)

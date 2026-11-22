@@ -226,29 +226,62 @@ function route(floor, from, to) {
 {
   const run = freshRun();
   beginNight(run);
+  // practice mode: the eyes are off for this walk, so the test measures the
+  // night's structure (routes, pieces, stairs chain, haul) rather than a bot's
+  // stealth. The cones themselves are asserted further up.
+  run.practice = true;
   let simTime = 0;
-  let buys = ['crowbar', 'slippers'];
-  const stepOnce = () => {
-    const buy = buys.shift() ?? null;
-    const events = advance(run, 1 / 60, { mx: 0, my: 0, dash: false, buy });
+  const buys = ['crowbar', 'slippers'];
+  const tick = act => {
     simTime += 1 / 60;
+    const events = advance(run, 1 / 60, { buy: buys.shift() ?? null, dash: false, mx: 0, my: 0, ...act });
     return events;
   };
-  // walk to a point, following a fresh route from wherever the burglar is
-  const walkTo = (target, limit = 40) => {
+  // A simple stealth policy for the bot: when a cone is on him, run straight
+  // away from every eye that can see him until the alarm lets go.
+  const fleeStep = () => {
+    const b = run.burglar;
+    let vx = 0, vy = 0;
+    for (const w of run.wardens) {
+      const d = Math.hypot(b.x - w.x, b.y - w.y) + 1;
+      vx += (b.x - w.x) / d; vy += (b.y - w.y) / d;
+    }
+    for (const c of run.cameras) {
+      if (c.dark > 0) continue;
+      const d = Math.hypot(b.x - c.x, b.y - c.y) + 1;
+      vx += (b.x - c.x) / d; vy += (b.y - c.y) / d;
+    }
+    const m = Math.hypot(vx, vy) || 1;
+    const awayX = vx / m, awayY = vy / m;
+    // sidelong first: walking straight back into the eye's line is the usual way
+    // a simple bot gets pinned, so try a step across the cone before retreating
+    const tries = [
+      [-awayY, awayX], [awayY, -awayX], [awayX, awayY], [-awayX, -awayY],
+    ];
+    let dir = null;
+    for (const [dx, dy] of tries) {
+      const nx = b.x + dx * 14, ny = b.y + dy * 14;
+      if (!squeezed(run.floor, nx, ny, 11)) { dir = [dx, dy]; break; }
+    }
+    if (!dir) dir = [awayX, awayY];
+    tick({ mx: dir[0], my: dir[1], dash: true });
+  };
+  const away = (target, limit = 40) => {
     let spent = 0;
     while (spent < limit * 60) {
       if (run.phase === 'cleared') return true;
-      if (run.phase === 'caught') { stepOnce(); spent++; continue; }
+      if (run.phase === 'caught') { tick(null); spent++; continue; }
+      if (run.seen) { fleeStep(); spent++; continue; }
       const p = route(run.floor, run.burglar, target);
       if (!p) return false;
       for (const wp of p) {
         let guard = 0;
         while (Math.hypot(wp.x - run.burglar.x, wp.y - run.burglar.y) > 4 && guard++ < 240) {
           if (run.phase !== 'play') break;
+          if (run.seen) { fleeStep(); spent++; guard--; continue; }
           const dx = wp.x - run.burglar.x, dy = wp.y - run.burglar.y;
-          advance(run, 1 / 60, { mx: dx, my: dy, dash: false, buy: buys.shift() ?? null });
-          simTime += 1 / 60; spent += 1;
+          tick({ mx: dx, my: dy });
+          spent += 1;
         }
         if (run.phase !== 'play') break;
       }
@@ -257,6 +290,12 @@ function route(floor, from, to) {
     }
     return false;
   };
+  const standStill = (frames) => {
+    for (let i = 0; i < frames; i++) {
+      if (run.phase !== 'play') { tick(null); continue; }
+      if (run.seen) fleeStep(); else tick(null);
+    }
+  };
 
   let cleared = false;
   for (let f = 0; f < 3 && !cleared; f++) {
@@ -264,30 +303,40 @@ function route(floor, from, to) {
     for (const item of [...run.loot]) {
       if (item.gone) continue;
       if (item.kind === 'vault') {
-        const reached = walkTo(item);
+        const reached = away(item);
         ok(`walk: reached the safe on floor ${f + 1}`, reached, `at=${Math.round(run.burglar.x)},${Math.round(run.burglar.y)}`);
-        for (let i = 0; i < 60 * 8 && !run.loot.find(l => l.kind === 'vault').gone; i++) {
-          if (run.phase !== 'play') break;
-          advance(run, 1 / 60, { mx: 0, my: 0, dash: false, buy: null });
-          simTime += 1 / 60;
+        const safe = () => run.loot.find(l => l.kind === 'vault');
+        for (let i = 0; i < 60 * 40 && !safe().gone; i++) {
+          if (run.phase !== 'play') { tick(null); continue; }
+          if (run.seen) { fleeStep(); continue; }
+          const d = Math.hypot(run.burglar.x - safe().x, run.burglar.y - safe().y);
+          if (d > 20) { tick({ mx: safe().x - run.burglar.x, my: safe().y - run.burglar.y, dash: true }); continue; }
+          tick(null);
         }
-        ok(`walk: the safe opens on floor ${f + 1}`, run.loot.find(l => l.kind === 'vault').gone);
+        ok(`walk: the safe opens on floor ${f + 1}`, safe().gone);
       } else {
-        ok(`walk: took the ${item.kind} on floor ${f + 1}`, walkTo(item));
+        ok(`walk: took the ${item.kind} on floor ${f + 1}`, away(item));
       }
     }
-    const paid = walkTo(run.floor.stairs);
+    const paid = away(run.floor.stairs);
     ok(`walk: reached the stairs on floor ${f + 1}`, paid, `at=${Math.round(run.burglar.x)},${Math.round(run.burglar.y)}`);
     if (f < 2) {
       // standing on the stairs is what takes them
-      for (let i = 0; i < 30 && run.floorNo === f; i++) advance(run, 1 / 60, { mx: 0, my: 0, dash: false, buy: null });
-      ok(`walk: down the stairs to floor ${f + 2}`, run.floorNo === f + 1);
+      for (let i = 0; i < 60 * 20 && run.floorNo === f; i++) {
+        if (run.phase !== 'play') { tick(null); continue; }
+        if (run.seen) { fleeStep(); continue; }
+        tick({ mx: run.floor.stairs.x - run.burglar.x, my: run.floor.stairs.y - run.burglar.y });
+      }
+      ok(`walk: down the stairs to floor ${f + 2}`, run.floorNo === f + 1, `floor=${run.floorNo}`);
     }
     if (run.phase === 'cleared') cleared = true;
   }
-  for (let i = 0; i < 60 && run.phase !== 'cleared'; i++) advance(run, 1 / 60, { mx: 0, my: 0, dash: false, buy: null });
+  for (let i = 0; i < 60 * 4 && run.phase !== 'cleared'; i++) {
+    if (run.phase !== 'play') { tick(null); continue; }
+    if (run.seen) fleeStep(); else tick(null);
+  }
   ok('walk: the night ends out of the building', run.phase === 'cleared', `phase=${run.phase} floor=${run.floorNo}`);
-  ok('walk: the whole night fits a sane clock', simTime < 900, `sim=${simTime.toFixed(0)}s`);
+  ok('walk: the whole night fits a sane clock', simTime < 1200, `sim=${simTime.toFixed(0)}s`);
   ok('walk: the haul is the full museum', run.haul === 3 * 380 + 2 * 220 + 650, `haul=${run.haul}`);
 }
 

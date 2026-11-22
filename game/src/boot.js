@@ -1,10 +1,11 @@
-// boot.js 鈥?canvas, the fixed-step loop, and the ?shot= staging used to take
+// boot.js - canvas, the fixed-step loop, and the ?shot= staging used to take
 // the screenshots. Every staged frame is a state the rules really produce.
 import { DT, CELL } from './tuning.js';
 import { loadFloor } from './layout.js';
 import { freshRun, beginNight, advance, WHEN } from './rules.js';
 import { attachKeys } from './keys.js';
-import { backdrop, paint } from './view.js';
+import { backdrop } from './props.js';
+import { paint } from './view.js';
 
 const board = document.getElementById('board');
 const ctx = board.getContext('2d');
@@ -13,98 +14,112 @@ const run = freshRun();
 let still = backdrop(run.floor);
 
 const at = (tx, ty) => ({ x: tx * CELL + CELL / 2, y: ty * CELL + CELL / 2 });
+const beatFace = w => Math.atan2(w.beat[1][1] - w.beat[0][1], w.beat[1][0] - w.beat[0][0]);
 
 function reloadStill() {
   still = backdrop(run.floor);
 }
 
 // ---------------------------------------------------------------- staging
-
+//
+// Four beats, each a frame a player could really sit in:
+//   cover    the whole vault court, mid-night, all seven pieces of the game in
+//            one frame: the room, the thief, three wardens, their torches, the
+//            two lenses, the steel door and the safe, and the HUD.
+//   drill    the safe half drilled, the ring climbing, a warden turning toward
+//            the racket with a ?
+//   lockdown the meter past the lock line: three torches closing, the dash
+//            rings loud, the red edge on.
+//   escape   the vault open, the bag full, the stairs lit, the clock nearly out
+//            and the night cleared.
 function stage(kind) {
   document.body.classList.add('still');
   if (kind !== 'title') beginNight(run);
 
   const setFloor = (n) => {
-    run.floorNo = n; run.floor = loadFloor(n); reloadStill();
-    run.wardens = run.floor.wardens.map(w => ({ ...w, aim: w.beat[0], rest: 0, nose: 0 }));
+    run.floorNo = n;
+    run.floor = loadFloor(n);
+    reloadStill();
+    run.wardens = run.floor.wardens.map(w => ({ ...w, face: beatFace(w), aim: w.beat[0], rest: 0, nose: 0 }));
     run.cameras = run.floor.cameras.map(c => ({ ...c, face: c.gaze, phase: 0, dark: 0 }));
     run.loot = run.floor.loot.map(l => ({ ...l }));
+    run.burglar.x = run.floor.entry.x;
+    run.burglar.y = run.floor.entry.y;
+    run.burglar.dashing = false;
+    run.phase = 'play';
   };
 
   if (kind === 'cover') {
-    // the vault court, mid-job: the door behind him, the safe half drilled,
-    // a torch coming round the door, a lens on the room, the meter climbing
     setFloor(2);
-    run.view = { s: 1.44, x: 640, y: 430 };
-    run.burglar.x = 700; run.burglar.y = 404;
-    run.pieces = 4; run.floorPieces = 0; run.haul = 1220;
-    run.clockOn = true; run.clock = 34.2; run.alarm = 0.56;
+    run.view = { s: 0.82, x: 640, y: 360 };
+    const b = at(12, 11);
+    run.burglar.x = b.x; run.burglar.y = b.y;
+    run.pieces = 3; run.haul = 980; run.floorPieces = 0;
+    run.clockOn = true; run.clock = 74.6;
+    run.alarm = 0.42;
+    run.purse = 25; run.kit = { crowbar: true, flash: true };
+    const w = run.wardens;
+    w[0].x = at(8, 7).x; w[0].y = at(8, 7).y; w[0].face = 0.28;
+    w[1].x = at(16, 5).x; w[1].y = at(16, 5).y; w[1].face = Math.PI / 2; w[1].nose = 1.2;
+    w[2].x = at(25, 12).x; w[2].y = at(25, 12).y; w[2].face = Math.PI;
+    run.cameras[0].face = Math.PI / 2;
+    run.cameras[1].face = Math.PI / 2;
+  } else if (kind === 'drill') {
+    setFloor(2);
+    run.view = { s: 1.36, x: 660, y: 400 };
     const safe = run.loot.find(l => l.kind === 'vault');
-    if (safe) safe.worked = 2.1;
-    run.wardens[1].x = 660; run.wardens[1].y = 236; run.wardens[1].face = Math.PI * 0.62;
-    run.wardens[2].x = 986; run.wardens[2].y = 436; run.wardens[2].face = Math.PI * 0.94;
-    run.wardens[0].x = 160; run.wardens[0].y = 40; run.wardens[0].face = -0.5;
-    run.cameras[1].face = Math.PI * 0.74;
-    run.cameras[0].face = -Math.PI * 0.4;
-  } else if (kind === 'gallery') {
-    // the long gallery: the jewel on its pedestal, the case lit, a torch sweeping
-    setFloor(0);
-    run.view = { s: 1.18, x: 780, y: 320 };
-    run.burglar.x = 800; run.burglar.y = 290;
-    run.pieces = 3; run.floorPieces = 1; run.haul = 600;
-    run.clockOn = true; run.clock = 52.6; run.alarm = 0.30;
-    run.wardens[0].x = 600; run.wardens[0].y = 300; run.wardens[0].face = 0.1;
-    run.wardens[1].x = 380; run.wardens[1].y = 430; run.wardens[1].face = -1.05;
-    run.wardens[2].x = 1060; run.wardens[2].y = 600; run.wardens[2].face = -2.4;
-    run.cameras[0].face = Math.PI / 2 - 0.2;
-    run.cameras[1].face = Math.PI + 0.2;
+    const b = { x: safe.x - 23, y: safe.y + 6 };
+    run.burglar.x = b.x; run.burglar.y = b.y;
+    safe.worked = 2.06;
+    run.pieces = 2; run.haul = 600; run.floorPieces = 0;
+    run.clockOn = true; run.clock = 41.0;
+    run.alarm = 0.58;
+    run.hunt = { at: { x: safe.x, y: safe.y }, life: 2.2 };
+    run.purse = 120; run.kit = {};
+    const w = run.wardens;
+    w[0].x = at(8, 10).x; w[0].y = at(8, 10).y; w[0].face = 0.35;
+    w[1].x = at(11, 7).x; w[1].y = at(11, 7).y;
+    w[1].face = Math.atan2(safe.y - w[1].y, safe.x - w[1].x); w[1].nose = 1.4;
+    w[2].x = at(22, 5).x; w[2].y = at(22, 5).y; w[2].face = Math.PI * 0.75;
+    run.cameras[0].face = 0.5;
+    run.cameras[1].face = Math.PI / 2;
+  } else if (kind === 'lockdown') {
+    setFloor(2);
+    run.view = { s: 1.30, x: 690, y: 420 };
+    const b = at(17, 12);
+    run.burglar.x = b.x; run.burglar.y = b.y; run.burglar.dashing = true;
+    run.pieces = 5; run.haul = 1580; run.floorPieces = 0;
+    run.clockOn = true; run.clock = 18.5;
+    run.alarm = 0.97;
+    run.hunt = { at: { x: b.x, y: b.y }, life: 2.6 };
+    run.purse = 25; run.kit = { crowbar: true, flash: true };
+    const w = run.wardens;
+    w[0].x = at(14, 9).x; w[0].y = at(14, 9).y;
+    w[0].face = Math.atan2(b.y - w[0].y, b.x - w[0].x);
+    w[1].x = at(18, 10).x; w[1].y = at(18, 10).y;
+    w[1].face = Math.atan2(b.y - w[1].y, b.x - w[1].x);
+    w[2].x = at(20, 13).x; w[2].y = at(20, 13).y;
+    w[2].face = Math.atan2(b.y - w[2].y, b.x - w[2].x);
+    run.cameras[0].face = -Math.PI / 2;
+    run.cameras[1].face = 2.1;
   } else if (kind === 'escape') {
-    // the last twenty seconds: the stairwell lit, the bag full, a torch behind
     setFloor(2);
-    run.view = { s: 1.26, x: 1130, y: 590 };
-    run.burglar.x = 1178; run.burglar.y = 622;
-    run.pieces = 4; run.floorPieces = 4; run.haul = 2100;
-    run.clockOn = true; run.clock = 6.4; run.alarm = 0.18;
-    run.wardens[2].x = 1046; run.wardens[2].y = 470; run.wardens[2].face = Math.PI * 0.75;
-    run.wardens[1].x = 620; run.wardens[1].y = 240; run.wardens[1].face = Math.PI * 0.55;
-    run.cameras[1].face = Math.PI * 0.8;
-  } else if (kind === 'alarm') {
-    // the second beat: the torch is a step away and the meter is nearly full
-    setFloor(2);
-    run.view = { s: 1.30, x: 700, y: 380 };
-    run.burglar.x = 690; run.burglar.y = 410;
-    run.pieces = 4; run.floorPieces = 0; run.haul = 1220;
-    run.clockOn = true; run.clock = 18.5; run.alarm = 0.84;
-    const safe = run.loot.find(l => l.kind === 'vault');
-    if (safe) safe.worked = 3.0;
-    run.wardens[1].x = 772; run.wardens[1].y = 316; run.wardens[1].face = Math.PI * 0.74;
-    run.wardens[2].x = 952; run.wardens[2].y = 470; run.wardens[2].face = Math.PI * 0.88;
-    run.wardens[0].x = 176; run.wardens[0].y = 60; run.wardens[0].face = 0.3;
-    run.cameras[1].face = Math.PI * 0.86;
-    run.cameras[0].face = -Math.PI * 0.35;
-  } else if (kind === 'looted') {
-    // the third beat: the safe is empty, the bag is full, the door is in reach
-    setFloor(2);
-    run.view = { s: 1.36, x: 640, y: 430 };
-    run.burglar.x = 606; run.burglar.y = 432;
-    run.pieces = 4; run.floorPieces = 4; run.haul = 2100;
-    run.clockOn = true; run.clock = 41.0; run.alarm = 0.12;
-    for (const l of run.loot) l.gone = true;
-    run.wardens[1].x = 470; run.wardens[1].y = 214; run.wardens[1].face = Math.PI * 0.35;
-    run.wardens[2].x = 980; run.wardens[2].y = 520; run.wardens[2].face = -Math.PI * 0.4;
-    run.wardens[0].x = 180; run.wardens[0].y = 60; run.wardens[0].face = 0.3;
-    run.cameras[1].face = Math.PI * 0.9;
-    run.cameras[0].face = -Math.PI * 0.4;
-  } else if (kind === 'caught') {
-    // the meter full: the torch found him and the night is over
-    setFloor(1);
-    run.view = { s: 1.16, x: 540, y: 380 };
-    run.burglar.x = 520; run.burglar.y = 380;
-    run.pieces = 2; run.floorPieces = 1; run.haul = 600;
-    run.clockOn = true; run.clock = 27.4; run.alarm = 1;
-    run.phase = 'caught'; run.fade = 0.2;
-    run.wardens[1].x = 632; run.wardens[1].y = 380; run.wardens[1].face = Math.PI;
-    run.wardens[0].x = 300; run.wardens[0].y = 300; run.wardens[0].face = 0.9;
+    run.floor.walls[run.floor.door.ty][run.floor.door.tx] = false;
+    run.view = { s: 1.12, x: 760, y: 466 };
+    const s = at(29, 16);
+    run.burglar.x = s.x; run.burglar.y = s.y;
+    for (const l of run.loot) { l.gone = true; }
+    run.pieces = 6; run.haul = 2230; run.floorPieces = 2;
+    run.clockOn = true; run.clock = 6.4;
+    run.alarm = 0.12;
+    run.purse = 25; run.kit = { crowbar: true, flash: true };
+    run.phase = 'cleared';
+    const w = run.wardens;
+    w[0].x = at(20, 10).x; w[0].y = at(20, 10).y; w[0].face = Math.PI * 0.55;
+    w[1].x = at(24, 13).x; w[1].y = at(24, 13).y; w[1].face = Math.PI * 0.95;
+    w[2].x = at(25, 8).x; w[2].y = at(25, 8).y; w[2].face = Math.PI * 0.6;
+    run.cameras[0].face = -Math.PI / 2;
+    run.cameras[1].face = Math.PI;
   }
 
   paint(ctx, run, run.floor, still);
@@ -149,4 +164,3 @@ addEventListener('pointerdown', () => {
 const shot = new URLSearchParams(location.search).get('shot');
 if (shot) stage(shot);
 else requestAnimationFrame(frame);
-

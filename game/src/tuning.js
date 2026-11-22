@@ -1,4 +1,4 @@
-﻿// tuning.js 鈥?every number the heist runs on, in one place, so a balance pass
+// tuning.js - every number the heist runs on, in one place, so a balance pass
 // never has to hunt through the renderer or the rules.
 export const CELL = 40;             // px per tile
 export const GRID_W = 32, GRID_H = 18;
@@ -21,6 +21,7 @@ export const WARDEN = {
   sway: 0.46,      // rad swept while stopped
   swivel: 2.4,     // rad/s turning toward a noise
   hark: 1.25,      // s a noise holds a warden's head
+  huntReach: 300,  // px: how far a hot meter pins a warden's stare
 };
 
 export const EYE = {
@@ -32,11 +33,14 @@ export const EYE = {
 };
 
 export const ALARM = {
-  warden: 1.05,    // meter gain per second in a torch cone
-  eye: 0.78,       // per second in a lens cone
-  cool: 0.17,      // per second lost while unseen
-  panic: 2.1,      // multiplier once the meter is past hotAt
+  warden: 0.42,    // meter gain per second in a torch cone (about 2.4s to trip)
+  eye: 0.30,       // per second in a lens cone
+  cool: 0.16,      // per second lost while unseen
+  panic: 1.8,      // multiplier once the meter is past hotAt
   hotAt: 0.6,
+  lockAt: 0.9,       // meter past this reads LOCKDOWN on the HUD
+  waryAt: 0.34,    // meter past this reads SUSPICIOUS on the HUD
+  huntFor: 2.6,    // s the eyes stay fixed on the last sighting
   trip: 1.0,       // meter value that ends the attempt
 };
 
@@ -61,6 +65,9 @@ export const KIT = [
 export const PURSE = 120;
 
 export const VALUE = { case: 220, gem: 380, vault: 650 };
+
+// The dashed beat painted on the marble under every warden.
+export const WARDEN_ROUTE = 'rgba(255,110,95,0.22)';
 
 // Palette: cold museum marble for cover, brass for valuable, red for danger.
 export const INK = {

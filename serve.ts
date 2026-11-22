@@ -29,7 +29,10 @@ const server = createServer((req, res) => {
   try {
     const stat = statSync(file);
     if (!stat.isFile()) throw new Error('not a file');
-    res.writeHead(200, { 'content-type': TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream' });
+    res.writeHead(200, {
+      'content-type': TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream',
+      'cache-control': 'no-store',
+    });
     res.end(readFileSync(file));
   } catch {
     res.writeHead(404).end('not found');
